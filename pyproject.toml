@@ -1,0 +1,15 @@
+[project]
+name = "livepresence"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "asyncio>=4.0.0",
+    "dataclasses>=0.8",
+    "keyring>=25.7.0",
+    "nicegui>=3.12.1",
+    "pypresence>=4.6.1",
+    "requests>=2.34.2",
+    "websockets>=16.0",
+]

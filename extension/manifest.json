@@ -1,0 +1,10 @@
+{
+    "name": "LivePresence",
+    "description": "Discord RPC",
+    "version": "0.1",
+    "manifest_version": 3,
+    "action": {
+        "default_popup": "home.html",
+        "default_icon": "icon.png"
+    }
+}
