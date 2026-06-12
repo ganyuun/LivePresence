@@ -1,31 +1,12 @@
-const websocket = new WebSocket("ws://localhost:8765/");
+export function updateElements(type) {
+    if (type === 'ping') {
+        document.getElementById("currentStatus").textContent = "Websocket active!";
+        document.getElementById("uiBtn").disabled = false;
 
-function connectWebSocket(websocket) {
-    return new Promise((resolve, reject) => {
-        websocket.onopen = () => {
-            console.log("Connected to WebSocket successfully!")
+        const uiBtn = document.getElementById("uiBtn");
 
-            const hello = {type: "hello", message: "ping"};
-
-            websocket.send(JSON.stringify(hello));
-        };
-
-        websocket.onerror = (error) => {
-            console.error("WebSocket connection error:", error);
-            reject(error);
-        };
-    });
-}
-
-websocket.addEventListener("message", ({ event }) => {
-    const response = JSON.parse(event);
-
-    console.log(response)
-
-    if (response.type === "hello") {
-        console.log("Received hello!")
-        document.querySelector(".ping").textContent = "Websocket active!"
+        uiBtn.addEventListener('click', function () {
+            chrome.tabs.create({ url: "http://localhost:8080" });
+        });
     }
-})
-
-connectWebSocket(websocket)
+}

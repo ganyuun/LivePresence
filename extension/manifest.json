@@ -3,8 +3,7 @@
     "description": "Discord RPC",
     "version": "0.1",
     "manifest_version": 3,
-    "action": {
-        "default_popup": "home.html",
-        "default_icon": "icon.png"
-    }
+    "action": {"default_popup": "home.html"},
+    "background": {"service_worker": "service_worker.js", "type": "module"},
+    "permissions": ["tabs"]
 }

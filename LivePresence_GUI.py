@@ -1,14 +1,118 @@
-import asyncio, keyring as kr, secrets, string
-from nicegui import app, ui
-from LivePresence_WebSocket import checkAuth, authentication, start_websocket_server
+import asyncio, keyring as kr, secrets, string, websockets, json, httpx
+from nicegui import app, ui, background_tasks
+from datetime import datetime, timedelta
+from pypresence import AioPresence, AioClient, exceptions
+from Presences import Activity, VideoActivity, MusicActivity
 
-if kr.get_password('LivePresence', 'storageSecret') is None:
-    alphabet = string.ascii_letters + string.digits + string.punctuation
-    storageSecret = ''
+serverStarted = False
+
+async def startWebsocket():
+    global serverStarted
+    serverStarted = True
+
+    async with websockets.serve(hello, 'localhost', 8765) as server:
+        await server.serve_forever()
+        print("Websocket started")
+
+async def hello(websocket):
+    try:
+        async for msgJSON in websocket:
+            msg = json.loads(msgJSON)
+
+            if msg.get('type') == 'hello': 
+                response = json.dumps({'type': 'hello', 'message': 'pong'})
+                await websocket.send(response)
+                print('Sent hello!')
+            elif msg.get('type') == 'enabledPresences':
+                enabledPresences = app.storage.general['enabledPresences']
+
+                response = json.dumps({'type': 'enabledPresences', 'message': enabledPresences})
+                await websocket.send(response)
+                print('Sent enabled presences!')
+            else:
+                response = json.dumps({'type': 'received', 'message': 'OK'})
+                await websocket.send(response)
+                print(f'Received: {msg}')
+    except websockets.exceptions.ConnectionClosedOK:
+        pass
+
+def checkAuth(clientID: str = None, clientSecret: str = None, redirectURI: str = None):
+    if None not in [clientID, clientSecret, redirectURI]:
+        if None in [kr.get_password('LivePresence', 'token'), kr.get_password('LivePresence', 'tokenExpire')]:
+            return 'credentials saved, no auth'
+        else:
+            tokenExpiry = kr.get_password('LivePresence', 'tokenExpire')
+
+            if datetime.now() > datetime.strptime(tokenExpiry, '%Y-%m-%d %H:%M:%S'): return 'token expired'
+            else: return 'token active'
+    else: return 'no credentials saved'
+
+async def authentication(clientID: str, clientSecret: str, redirectURI: str, refreshToken: str = None):
+    loop = asyncio.get_running_loop()
+
+    client = AioClient(clientID, loop = loop)
+    await client.start()
+
+    if checkAuth(clientID, clientSecret, redirectURI) == 'token active':
+        await client.authenticate(kr.get_password('LivePresence', 'token'))
+        return 'auth success'
+    else:
+        try:
+            auth = await client.authorize(clientID, ['rpc'])
+            code = auth.get('data').get('code')
+
+            if refreshToken is None:
+                data = {
+                    'grant_type': 'authorization_code',
+                    'code': code,
+                    'redirect_uri': redirectURI
+                }
+            else:
+                data = {
+                    'grant_type': 'refresh_token',
+                    'refresh_token': refreshToken
+                }
+            
+            headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+            try:
+                r = httpx.post('https://discord.com/api/oauth2/token', data = data, headers = headers, auth = (clientID, clientSecret))
+                r.raise_for_status()
+                response = r.json()
+
+                print(r.text)
+
+                now = datetime.now()
+                expiry = now + timedelta(seconds = int(response.get('expires_in')))
+
+                kr.set_password('LivePresence', 'token', response.get('access_token'))
+                kr.set_password('LivePresence', 'tokenSaveTime', now.strftime('%Y-%m-%d %H:%M:%S'))
+                kr.set_password('LivePresence', 'tokenExpire', expiry.strftime('%Y-%m-%d %H:%M:%S'))
+                kr.set_password('LivePresence', 'refreshToken', response.get('refresh_token'))
+
+                return 'auth success'
+            except httpx.HTTPError:
+                return 'Invalid Redirect URI'
+        except exceptions.InvalidID:
+            return 'Invalid Client ID'
+
+async def setPresence():
+    RPC = AioPresence(kr.get_password('LivePresence', 'clientID'))
     
-    for i in range(16): storageSecret += secrets.choice(alphabet)
+    await RPC.connect()
 
-    kr.set_password('LivePresence', 'storageSecret', storageSecret)
+    activity = Activity('LivePresence', 'PLAYING', 'Testing LivePresence', 1)
+
+    print(
+        await RPC.update(
+            name = 'Testing LivePresence',
+            details = "I genuinely hate this thing like actually",
+            state = "I hate coding!!!!"
+        )
+    )
+
+    while True:
+        await asyncio.sleep(15)
 
 async def setup():
     clientID = kr.get_password('LivePresence', 'clientID')
@@ -27,18 +131,19 @@ async def setup():
 
         with container: ui.notify('Saved! Now authenticating...', type = 'info')
         
-        authResult = await authentication(clientID, clientSecret, redirectURI)
+        authResult = asyncio.create_task(authentication(clientID, clientSecret, redirectURI))
+
+        print(authResult)
 
         if authResult == 'auth success':
             with container:
                 ui.notify('Authenticated successfully!', type = 'positive')
             dialog.close()
-            start_websocket_server()
         else:
             with container:
                 ui.notify(f'{authResult}. Please try again.', type = 'negative')
 
-    with ui.dialog().props('persistent') as dialog, ui.card():
+    with ui.dialog(value = True).props('persistent') as dialog, ui.card():
         ui.markdown('''
             No token was detected. Please enter your application's client ID and client secret from the [Discord Developer Portal](https://discord.com/developers/home) to continue using LivePresence.
             
@@ -58,24 +163,19 @@ async def setup():
         if inputClientID.value.isdigit() and 'http://localhost:' in inputRedirectURI.value: saveButton.enable()
         else: saveButton.disable()
 
-    if authStatus == 'token active': await authentication(clientID, clientSecret, redirectURI)
-    else: dialog.open()
-
 @ui.page('/')
 async def home():
-    if app.storage.user.get('presencePriority') is None: 
-        app.storage.user['presencePriority'] = ['YouTube', 'SoundCloud']
-        presencePriority = app.storage.user['presencePriority']
-    else: presencePriority = app.storage.user['presencePriority']
+    if app.storage.general.get('presencePriority') is None: 
+        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud']
+        presencePriority = app.storage.general['presencePriority']
+    else: presencePriority = app.storage.general['presencePriority']
 
-    if app.storage.user.get('enabledPresences') is None:
-        app.storage.user['enabledPresences'] = presencePriority.copy()
-    else: enabledPresences = app.storage.user['enabledPresences']
-
-    await setup()
+    if app.storage.general.get('enabledPresences') is None:
+        app.storage.general['enabledPresences'] = presencePriority.copy()
+    else: enabledPresences = app.storage.general['enabledPresences']
 
     def handleCheck(presence: str, add: bool):
-        enabledPresences = app.storage.user['enabledPresences']
+        enabledPresences = app.storage.general['enabledPresences']
         
         if add is True and presence not in enabledPresences:
             enabledPresences.append(presence)
@@ -83,7 +183,7 @@ async def home():
         elif add is False and presence in enabledPresences:
             enabledPresences.remove(presence)
         
-        app.storage.user['enabledPresences'] = enabledPresences
+        app.storage.general['enabledPresences'] = enabledPresences
         print(enabledPresences)
 
     with ui.list().classes('self-center w-full') as defaultPresences:
@@ -97,9 +197,40 @@ async def home():
     def presencesOnSort():
         order = [descendant.text for descendant in defaultPresences.descendants() if isinstance(descendant, ui.item_label)]
         print(order)
-        app.storage.user['presencePriority'] = order
+        app.storage.general['presencePriority'] = order
     
     defaultPresences.make_sortable(on_end = presencesOnSort)
 
+@app.on_startup
+async def onStartup():
+    if authStatus == 'token active':
+        authResult = await authentication(clientID, clientSecret, redirectURI)
+        print(authResult)
+
+        if authResult == 'auth success':
+            if serverStarted is False: background_tasks.create(startWebsocket())
+            else: print('Not starting server, already active')
+
+            await setPresence()
+    else: await setup()
+
 if __name__ == "__main__":
-    ui.run(dark = True, reload = False, storage_secret = kr.get_password('LivePresence', 'storageSecret'))
+    clientID = kr.get_password('LivePresence', 'clientID')
+    clientSecret = kr.get_password('LivePresence', 'clientSecret')
+    redirectURI = kr.get_password('LivePresence', 'redirectURI')
+
+    authStatus = checkAuth(clientID, clientSecret, redirectURI)
+    storageSecret = kr.get_password('LivePresence', 'storageSecret')
+
+    print(authStatus)
+    
+    if storageSecret is None:
+        storageSecret = ''
+        
+        for i in range(16): storageSecret += secrets.choice(string.ascii_letters)
+
+        kr.set_password('LivePresence', 'storageSecret', storageSecret)
+    
+    if authStatus == 'token active':
+        ui.run(dark = True, reload = False, storage_secret = storageSecret, show = False)
+    else: ui.run(dark = True, reload = False, storage_secret = storageSecret)
