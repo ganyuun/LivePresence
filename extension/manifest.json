@@ -4,6 +4,6 @@
     "version": "0.1",
     "manifest_version": 3,
     "action": {"default_popup": "home.html"},
-    "background": {"service_worker": "service_worker.js", "type": "module"},
+    "background": {"service_worker": "service-worker.js", "type": "module"},
     "permissions": ["tabs"]
 }

@@ -22,13 +22,13 @@ async def hello(websocket):
             if msg.get('type') == 'hello': 
                 response = json.dumps({'type': 'hello', 'message': 'pong'})
                 await websocket.send(response)
-                print('Sent hello!')
+                print(f'Sent hello! {response}')
             elif msg.get('type') == 'enabledPresences':
                 enabledPresences = app.storage.general['enabledPresences']
 
                 response = json.dumps({'type': 'enabledPresences', 'message': enabledPresences})
                 await websocket.send(response)
-                print('Sent enabled presences!')
+                print(f'Sent enabled presences! {response}')
             else:
                 response = json.dumps({'type': 'received', 'message': 'OK'})
                 await websocket.send(response)
@@ -165,14 +165,9 @@ async def setup():
 
 @ui.page('/')
 async def home():
-    if app.storage.general.get('presencePriority') is None: 
-        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud']
-        presencePriority = app.storage.general['presencePriority']
-    else: presencePriority = app.storage.general['presencePriority']
-
-    if app.storage.general.get('enabledPresences') is None:
-        app.storage.general['enabledPresences'] = presencePriority.copy()
-    else: enabledPresences = app.storage.general['enabledPresences']
+    presencePriority = app.storage.general['presencePriority']
+    enabledPresences = app.storage.general['enabledPresences']
+    print(enabledPresences)
 
     def handleCheck(presence: str, add: bool):
         enabledPresences = app.storage.general['enabledPresences']
@@ -182,16 +177,13 @@ async def home():
             
         elif add is False and presence in enabledPresences:
             enabledPresences.remove(presence)
-        
-        app.storage.general['enabledPresences'] = enabledPresences
-        print(enabledPresences)
 
     with ui.list().classes('self-center w-full') as defaultPresences:
         for presence in presencePriority:
             with ui.item().classes('flex items-center justify-center w-full text-center py-2 my-4 h-12 rounded-md bg-blue-500 hover:bg-sky-700 cursor-grab active:cursor-grabbing'):
-                ui.item_label(presence).classes('flex items-center justify-center')
+                ui.item_label(presence.get('name')).classes('flex items-center justify-center')
                 
-                if presence in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
+                if presence.get('name') in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
                 else: ui.checkbox(value = False, on_change = lambda e, presence = presence: handleCheck(presence, e.value))
 
     def presencesOnSort():
@@ -203,6 +195,17 @@ async def home():
 
 @app.on_startup
 async def onStartup():
+    if app.storage.general.get('presencePriority') is None: 
+        app.storage.general['presencePriority'] = [
+            {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'}, 
+            {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'}
+        ]
+    
+    presencePriority = app.storage.general['presencePriority']
+
+    if app.storage.general.get('enabledPresences') is None:
+        app.storage.general['enabledPresences'] = presencePriority.copy()
+
     if authStatus == 'token active':
         authResult = await authentication(clientID, clientSecret, redirectURI)
         print(authResult)
