@@ -10,7 +10,6 @@ class Activity:
     name: str # displayed as the first line on member list
     type: str # accepts only 'PLAYING', 'WATCHING', or 'LISTENING'
     details: str # displayed when you click on the status
-    priority: int # determined by order of presences in GUI
 
     activityType: ActivityType = field(init = False)
     displayType: StatusDisplayType = field(init = False, default = StatusDisplayType.STATE)
@@ -24,14 +23,15 @@ class Activity:
 
 @dataclass(kw_only = True)
 class VideoActivity(Activity):
-    def calcEnd(self, hours: int, minutes: int, seconds: int):
-        result = self.start + timedelta(hours = hours, minutes = minutes, seconds = seconds)
-        return int(result.timestamp())
-
     state_url: str
     activityType: ActivityType = ActivityType.WATCHING
+    duration: int
     start: int = int(datetime.now().timestamp())
-    end: int = field(default_factory = calcEnd)
+    end: int = field(init = False)
+
+    def __post_init__(self):
+        result = datetime.fromtimestamp(self.start) + timedelta(hours = 0, minutes = 0, seconds = self.duration)
+        self.end = int(result.timestamp())
 
 @dataclass
 class MusicActivity(VideoActivity):

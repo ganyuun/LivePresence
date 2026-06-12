@@ -29,6 +29,29 @@ async def hello(websocket):
                 response = json.dumps({'type': 'enabledPresences', 'message': enabledPresences})
                 await websocket.send(response)
                 print(f'Sent enabled presences! {response}')
+            elif msg.get('type') == 'tabs':
+                presencePriority = app.storage.general['presencePriority']
+                activities = msg.get('message')
+
+                for activity in activities:
+                    try:
+                        activity.update( {'priority': presencePriority.index(activity.get("name"))} )
+                    except ValueError:
+                        activity.update( {'priority': -1} )
+                
+                highPriority = sorted(activities, key = lambda x: x['priority'], reverse = True)[0]
+
+                print(highPriority)
+
+                if highPriority.get('activityType') == 'WATCHING':
+                    newActivity = VideoActivity(
+                        name = highPriority.get('name'), 
+                        details = highPriority.get('details'), 
+                        duration = highPriority.get('duration'),
+                        type = highPriority.get('activityType'),
+                        state_url = highPriority.get('url')
+                    )
+                await setPresence(newActivity)
             else:
                 response = json.dumps({'type': 'received', 'message': 'OK'})
                 await websocket.send(response)
@@ -96,23 +119,30 @@ async def authentication(clientID: str, clientSecret: str, redirectURI: str, ref
         except exceptions.InvalidID:
             return 'Invalid Client ID'
 
-async def setPresence():
+async def setPresence(activity: Activity):
     RPC = AioPresence(kr.get_password('LivePresence', 'clientID'))
     
     await RPC.connect()
 
-    activity = Activity('LivePresence', 'PLAYING', 'Testing LivePresence', 1)
-
-    print(
-        await RPC.update(
-            name = 'Testing LivePresence',
-            details = "I genuinely hate this thing like actually",
-            state = "I hate coding!!!!"
+    if (activity.start):
+        print(
+            await RPC.update(
+                name = activity.name,
+                details = activity.details,
+                start = activity.start,
+                end = activity.end,
+            )
         )
-    )
+    else:
+        print(
+            await RPC.update(
+                name = activity.name,
+                details = activity.details,
+            )
+        )
 
-    while True:
-        await asyncio.sleep(15)
+    # while True:
+    await asyncio.sleep(15)
 
 async def setup():
     clientID = kr.get_password('LivePresence', 'clientID')
@@ -181,9 +211,9 @@ async def home():
     with ui.list().classes('self-center w-full') as defaultPresences:
         for presence in presencePriority:
             with ui.item().classes('flex items-center justify-center w-full text-center py-2 my-4 h-12 rounded-md bg-blue-500 hover:bg-sky-700 cursor-grab active:cursor-grabbing'):
-                ui.item_label(presence.get('name')).classes('flex items-center justify-center')
+                ui.item_label(presence).classes('flex items-center justify-center')
                 
-                if presence.get('name') in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
+                if presence in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
                 else: ui.checkbox(value = False, on_change = lambda e, presence = presence: handleCheck(presence, e.value))
 
     def presencesOnSort():
@@ -196,15 +226,13 @@ async def home():
 @app.on_startup
 async def onStartup():
     if app.storage.general.get('presencePriority') is None: 
-        app.storage.general['presencePriority'] = [
+        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud']
+
+    if app.storage.general.get('enabledPresences') is None:
+        app.storage.general['enabledPresences'] = [
             {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'}, 
             {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'}
         ]
-    
-    presencePriority = app.storage.general['presencePriority']
-
-    if app.storage.general.get('enabledPresences') is None:
-        app.storage.general['enabledPresences'] = presencePriority.copy()
 
     if authStatus == 'token active':
         authResult = await authentication(clientID, clientSecret, redirectURI)
@@ -213,8 +241,6 @@ async def onStartup():
         if authResult == 'auth success':
             if serverStarted is False: background_tasks.create(startWebsocket())
             else: print('Not starting server, already active')
-
-            await setPresence()
     else: await setup()
 
 if __name__ == "__main__":

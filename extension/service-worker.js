@@ -1,10 +1,8 @@
-import { updateElements } from "./websocket.js";
-
 const websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
-let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)", "g"), SoundCloud: null, Miruro: null, urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
+let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: null, urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
 let websocketActive = false;
 let debounceTimer;
 
@@ -34,29 +32,38 @@ function addChromeListeners() {
         let activeInfo = {id: tab.id, title: tab.title || "Loading", url: tab.url}
 
         debounceTimer = setTimeout(() => { getTabs(activeInfo); }, 1000);
-
-        console.log("activeInfo", activeInfo)
     });
 
     chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-        console.log("onRemoved Listener removeInfo:", removeInfo)
-
         if (removeInfo.isWindowClosing === true) { websocket.send( JSON.stringify( {type: "tabs", message: []} )); }
         else {
             if (tabList.length > 0) {
                 const filterIndex = tabList.findIndex(tab => tabId === tab.tabId);
-                console.log("filterIndex in onRemoved:", filterIndex);
 
                 if (filterIndex !== -1) {
                     tabList.splice(filterIndex, 1);
                     console.log("Updated tabList:", tabList);
                     websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
                 }
-                else { console.log("tabList unchanged:", tabList); }
+                else { console.log("tabList unchanged."); }
             }
-            else { console.log("tabList unchanged:", tabList); }
+            else { console.log("tabList unchanged."); }
         }
     })
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    console.log("Message received from", sender, ":", msg);
+
+    if (msg.request === "ping") {
+        if (websocketActive) { sendResponse({recipient: "popup.js", request: "Websocket active!"}) }
+    }
+});
+
+async function notifyContent(recipient, request, tabId) {
+    try {
+        response = await chrome.tabs.sendMessage( tabId, {recipient: recipient, request: request} ); 
+    } catch (error) { console.error("Unable to send message:", error); }
 }
 
 websocket.addEventListener("message", (event) => {
@@ -65,7 +72,6 @@ websocket.addEventListener("message", (event) => {
     if (msg.type === "hello") {
         websocketActive = true;
         console.log("Received hello:", msg);
-        updateElements('ping');
     }
 
     if (msg.type === "enabledPresences") {
@@ -81,41 +87,48 @@ websocket.addEventListener("message", (event) => {
 
         presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" )
         presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" )
-
-        console.log("Presences:", presences)
     }
 });
 
 async function getTabs(activeInfo) {
     try {
         let activityType = ""
+
+        let vidDuration;
         
         const tabs = await chrome.tabs.query({ url: presences.acceptedURLs });
 
         tabList = [];
 
-        if (tabs.length > 0) { 
-            tabs.forEach( 
-                (tab) => {
-                    if ( (presences.videoType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "WATCHING"; }
-                    else if ( (presences.musicType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "LISTENING" }
-                    else { activityType = "PLAYING" }
+        if (tabs.length > 0) {
+            for (const tab of tabs) {
+                if ( (presences.videoType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "WATCHING"; }
+                else if ( (presences.musicType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "LISTENING" }
+                else { activityType = "PLAYING" }
 
-                    if ((tab.title).includes("- YouTube")) { tabList.push( {'tabId': tab.id, 'name': 'YouTube', 'details': (tab.title).replace(regex.YouTube, ""), 'url': (tab.url).replace(RegExp("&.*", "g"), ""), 'activityType': activityType} ); }
-                    else { tabList.push({'tabId': tab.id, 'details': tab.title, 'url': tab.url, 'activityType': activityType}); }
+                if ((tab.title).includes("- YouTube")) {
+                    const [{result}] = await chrome.scripting.executeScript({
+                        target: { tabId: tab.id },
+                        func: () => document.querySelector('video')?.duration
+                    });
+
+                    vidDuration = result;
+
+                    console.log("vidDuration", vidDuration);
+
+                    tabList.push( {'tabId': tab.id, 'name': 'YouTube', 'details': (tab.title).replace(regex.YouTube, ""), 'url': (tab.url).replace(RegExp("&.*", "g"), ""), 'activityType': activityType, 'duration': vidDuration, 'timeSent': Date.now()} );
                 }
-            ); 
+                else { tabList.push({'tabId': tab.id, 'details': tab.title, 'url': tab.url, 'activityType': activityType}); }
+            }
         }
         const newDetails = tabList.map( (dict) => dict.details );
         let lastDetails = [];
 
         if (lastMessage !== []) { lastDetails = lastMessage.map( (dict) => dict.details ); }
 
-        console.log("newDetails/lastDetails", newDetails, lastDetails);
-
         if (lastMessage === [] || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
             websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
-            console.log("Tabs sent", tabList);
+            console.log("Tabs sent");
             lastMessage = tabList;
         }
         else { console.log("Duplicate message, not sent") }
