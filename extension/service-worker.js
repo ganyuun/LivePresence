@@ -6,6 +6,7 @@ let tabList = [];
 let lastMessage = [];
 let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)", "g"), SoundCloud: null, Miruro: null, urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
 let websocketActive = false;
+let debounceTimer;
 
 function connectWebSocket(websocket) {
     return new Promise((resolve, reject) => {
@@ -28,11 +29,13 @@ function connectWebSocket(websocket) {
 
 function addChromeListeners() {
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-        if (changeInfo.status === 'complete' && tab.status === 'complete') {
-            console.log("onUpdated Listener changeInfo/tabStatus:", changeInfo.status, tab.status)
-            const activeInfo = {id: tab.id, title: tab.title || "Loading", url: tab.url}
-            getTabs(activeInfo);
-        }
+        clearTimeout(debounceTimer);
+
+        let activeInfo = {id: tab.id, title: tab.title || "Loading", url: tab.url}
+
+        debounceTimer = setTimeout(() => { getTabs(activeInfo); }, 1000);
+
+        console.log("activeInfo", activeInfo)
     });
 
     chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
