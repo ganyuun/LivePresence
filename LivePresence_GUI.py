@@ -74,7 +74,7 @@ async def hello(websocket):
 
 async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
     try:
-        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime))
+        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime) + 30)
 
         print("Expected End Time: ", expectedEndTime.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -84,6 +84,7 @@ async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
                 details = presence.details,
                 act_type = presence.activityType,
                 **utils.ProgressBar(presence.currentTime, presence.duration),
+                large_image = presence.thumbnail,
                 status_type = presence.statusDisplayType,
                 details_url = presence.state_url
             )
