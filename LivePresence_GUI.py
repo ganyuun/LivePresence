@@ -1,4 +1,5 @@
 import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc
+from datetime import datetime
 from nicegui import app, ui, background_tasks
 from discordrpc import utils, RPCException
 from Presences import Presence, VideoPresence, MusicPresence
@@ -39,30 +40,31 @@ async def hello(websocket):
                 await websocket.send(response)
                 print(f'Sent enabled presences! {response}')
             elif msg.get('type') == 'tabs':
-                RPC.clear()
+                if len(msg.get('message')) > 0:
+                    presencePriority = app.storage.general['presencePriority']
+                    activities = msg.get('message')
 
-                presencePriority = app.storage.general['presencePriority']
-                activities = msg.get('message')
+                    for activity in activities:
+                        try: activity.update( {'priority': presencePriority.index(activity.get("name"))} )
+                        except ValueError: activity.update( {'priority': -1} )
+                    
+                    highPriority = sorted(activities, key = lambda x: x['priority'], reverse = True)[0]
 
-                for activity in activities:
-                    try: activity.update( {'priority': presencePriority.index(activity.get("name"))} )
-                    except ValueError: activity.update( {'priority': -1} )
-                
-                highPriority = sorted(activities, key = lambda x: x['priority'], reverse = True)[0]
+                    print(highPriority)
 
-                print(highPriority)
-
-                if highPriority.get('activityType') == 'WATCHING':
-                    newActivity = VideoPresence(
-                        name = highPriority.get('name'), 
-                        details = highPriority.get('details'), 
-                        currentTime = highPriority.get('currentTime'),
-                        duration = highPriority.get('duration'),
-                        thumbnail = highPriority.get('thumbnail'),
-                        type = highPriority.get('activityType'),
-                        state_url = highPriority.get('url')
-                    )
-                setPresence(newActivity, RPC)
+                    if highPriority.get('activityType') == 'WATCHING':
+                        newActivity = VideoPresence(
+                            name = highPriority.get('name'), 
+                            details = highPriority.get('details'), 
+                            currentTime = highPriority.get('currentTime'),
+                            duration = highPriority.get('duration'),
+                            thumbnail = highPriority.get('thumbnail', ''),
+                            type = highPriority.get('activityType'),
+                            state_url = highPriority.get('url'),
+                            timeSent = highPriority.get('timeSent')
+                        )
+                    await setPresence(newActivity, RPC, websocket)
+                else: RPC.clear()
             else:
                 response = json.dumps({'type': 'received', 'message': 'OK'})
                 await websocket.send(response)
@@ -70,8 +72,12 @@ async def hello(websocket):
     except websockets.exceptions.ConnectionClosedOK:
         pass
 
-def setPresence(presence: Presence, RPC: discordrpc.RPC):
+async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
     try:
+        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime))
+
+        print("Expected End Time: ", expectedEndTime.strftime("%Y-%m-%d %H:%M:%S"))
+
         if (presence.name):
             RPC.set_activity(
                 state = presence.name,
@@ -79,7 +85,7 @@ def setPresence(presence: Presence, RPC: discordrpc.RPC):
                 act_type = presence.activityType,
                 **utils.ProgressBar(presence.currentTime, presence.duration),
                 status_type = presence.statusDisplayType,
-                state_url = presence.state_url
+                details_url = presence.state_url
             )
         else:
             RPC.set_activity(
@@ -90,14 +96,22 @@ def setPresence(presence: Presence, RPC: discordrpc.RPC):
             )
     except RPCException as e:
         print(f'Error when trying to set status: {e}')
+    
+    # compare current time to expected end time so that activities don't stick for longer than expected
+    while True:
+        if (datetime.now() > expectedEndTime):
+            print('Current time has passed expectedEndTime. Requesting new tab information.')
+            response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+            await websocket.send(response)
+            break
+        
+        await asyncio.sleep(10)
 
 async def setup():
     container = ui.row()
 
-    async def save(clientID: str, clientSecret: str, redirectURI: str):
+    async def save(clientID: str):
         kr.set_password('LivePresence', 'clientID', clientID)
-        kr.set_password('LivePresence', 'clientSecret', clientSecret)
-        kr.set_password('LivePresence', 'redirectURI', redirectURI)
 
         with container: ui.notify('Saved! Now authenticating...', type = 'info')
 
@@ -107,7 +121,7 @@ async def setup():
             with container:
                 ui.notify('LivePresence connected to Discord successfully!', type = 'positive')
             dialog.close()
-        except discordrpc.exceptions.Error as e:
+        except discordrpc.exceptions.RPCException as e:
             with container:
                 ui.notify(f'{e}. Please try again.', type = 'negative')
             

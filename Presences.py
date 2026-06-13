@@ -9,6 +9,7 @@ class Presence:
     name: str # displayed as the first line on member list
     type: str # accepts only 'PLAYING', 'WATCHING', or 'LISTENING'
     details: str # displayed when you click on the status
+    timeSent: float
 
     activityType: Activity = field(init = False)
     statusDisplayType: StatusDisplay = field(init = False, default = StatusDisplay.State)
