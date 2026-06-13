@@ -90,6 +90,29 @@ websocket.addEventListener("message", (event) => {
     }
 });
 
+const getVidInfo = (tabId, interval = 1000) => {
+    return new Promise((resolve) => {
+        const check = async () => {
+            const [{result: result1}] = await chrome.scripting.executeScript({
+                target: { tabId: tabId },
+                func: () => document.querySelector('video')?.currentTime
+            });
+            
+            const [{result: result2}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('video')?.duration
+                    });
+
+            let vidCurrentTime = result1;
+            let vidDuration = result2;
+
+            if (vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
+            else { setTimeout(check, interval) }
+        };
+        check();
+    });
+}
+
 async function getTabs(activeInfo) {
     try {
         let activityType = ""
@@ -102,23 +125,35 @@ async function getTabs(activeInfo) {
 
         if (tabs.length > 0) {
             for (const tab of tabs) {
-                if ( (presences.videoType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "WATCHING"; }
-                else if ( (presences.musicType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = "LISTENING" }
-                else { activityType = "PLAYING" }
+                if ( (presences.videoType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) {
+                    activityType = 'WATCHING';
 
-                if ((tab.title).includes("- YouTube")) {
-                    const [{result}] = await chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: () => document.querySelector('video')?.duration
-                    });
+                    const [vidCurrentTime, vidDuration] = await getVidInfo(tab.id);
 
-                    vidDuration = result;
+                    console.log('vidDuration and vidCurrentTime:', vidCurrentTime, vidDuration);
 
-                    console.log("vidDuration", vidDuration);
-
-                    tabList.push( {'tabId': tab.id, 'name': 'YouTube', 'details': (tab.title).replace(regex.YouTube, ""), 'url': (tab.url).replace(RegExp("&.*", "g"), ""), 'activityType': activityType, 'duration': vidDuration, 'timeSent': Date.now()} );
+                    if ((tab.url).includes("youtube")) {
+                        tabList.push( {
+                            'tabId': tab.id, 
+                            'name': 'YouTube', 
+                            'details': (tab.title).replace(regex.YouTube, ''), 
+                            'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
+                            'activityType': activityType, 
+                            'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\?v)|(&).*", "g"), "")}/default.jpg`,
+                            'currentTime': vidCurrentTime, 
+                            'duration': vidDuration, 
+                            'timeSent': Date.now()} );
+                        continue
+                    }
                 }
-                else { tabList.push({'tabId': tab.id, 'details': tab.title, 'url': tab.url, 'activityType': activityType}); }
+                else if ( (presences.musicType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = 'LISTENING'; }
+                else { activityType = 'PLAYING'; }
+
+                tabList.push({
+                    'tabId': tab.id, 
+                    'details': tab.title, 
+                    'url': tab.url, 
+                    'activityType': activityType});
             }
         }
         const newDetails = tabList.map( (dict) => dict.details );
