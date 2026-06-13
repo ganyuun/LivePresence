@@ -63,7 +63,15 @@ async def hello(websocket):
                             state_url = highPriority.get('url'),
                             timeSent = highPriority.get('timeSent')
                         )
-                    await setPresence(newActivity, RPC, websocket)
+                    
+                    if newActivity.name == 'YouTube':
+                        if '/watch' in newActivity.state_url: await setPresence(newActivity, RPC, websocket)
+                        else: 
+                            print("User isn't watching a video, not broadcasting status. Requesting new tabs in 10s.")
+                            await asyncio.sleep(10)
+                            response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                            await websocket.send(response)
+                    else: await setPresence(newActivity, RPC, websocket)
                 else: RPC.clear()
             else:
                 response = json.dumps({'type': 'received', 'message': 'OK'})
