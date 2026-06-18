@@ -7,7 +7,7 @@ from Presences import Presence, VideoPresence, MusicPresence
 serverStarted = False
 
 # websockets.exceptions.ConnectionClosedError: sent 1011 (internal error) keepalive ping timeout; no close frame received
-# do try except connectionclosed later, make websocket reconnect if it runs into issues
+# will try except connectionclosed later, make websocket reconnect if it runs into issues
 async def startWebsocket():
     global serverStarted
     serverStarted = True
@@ -41,6 +41,10 @@ async def hello(websocket):
                 response = json.dumps({'type': 'enabledPresences', 'message': filteredPresenceInfo})
                 await websocket.send(response)
                 print(f'Sent enabled presences! {response}')
+            elif msg.get('type') == 'clear':
+                print('Status cleared on request from extension.')
+                activities = []
+                RPC.clear()
             elif msg.get('type') == 'tabs':
                 if len(msg.get('message')) > 0:
                     presencePriority = app.storage.general['presencePriority']
@@ -52,7 +56,7 @@ async def hello(websocket):
                     
                     highPriority = sorted(activities, key = lambda x: x['priority'], reverse = True)[0]
 
-                    print(highPriority)
+                    print('Highest priority activity:', highPriority)
 
                     if highPriority.get('activityType') == 'WATCHING':
                         newActivity = VideoPresence(
@@ -84,7 +88,7 @@ async def hello(websocket):
 
 async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
     try:
-        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime) + 10)
+        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime) + 5)
 
         print("Expected End Time: ", expectedEndTime.strftime("%Y-%m-%d %H:%M:%S"))
 
@@ -109,14 +113,14 @@ async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
         print(f'Error when trying to set status: {e}')
     
     # compare current time to expected end time so that activities don't stick for longer than expected
-    while True:
+    """while True:
         if (datetime.now() > expectedEndTime):
             print('Current time has passed expectedEndTime. Requesting new tab information.')
             response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
             await websocket.send(response)
             break
         
-        await asyncio.sleep(10)
+        await asyncio.sleep(10)"""
 
 async def setup():
     container = ui.row()

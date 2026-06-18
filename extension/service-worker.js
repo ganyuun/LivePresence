@@ -58,6 +58,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             console.error("Unable to send message:", error)
         }
     }
+    else if (msg.request === 'clear') {
+        try {
+            websocket.send( JSON.stringify({type: "clear", message: "clear"}) );
+            console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
+        }
+        catch (error) { console.error("Unable to send message:", error) }
+    }
 });
 
 async function notifyContent(recipient, request, tabId) {
@@ -129,7 +136,7 @@ async function getTabs(duplicates = false) {
 
                     const [vidCurrentTime, vidDuration] = await getVidInfo(tab.id);
 
-                    console.log('vidDuration and vidCurrentTime:', vidCurrentTime, vidDuration);
+                    // console.log('vidDuration and vidCurrentTime:', vidCurrentTime, vidDuration);
 
                     if ((tab.url).includes("youtube")) {
                         tabList.push( {
@@ -158,7 +165,7 @@ async function getTabs(duplicates = false) {
 
         if (duplicates === true) {
             websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
-            console.log("Tabs sent");
+            console.log("Tabs sent (duplicates = true):", tabList);
             lastMessage = tabList;
         }
         else {
@@ -169,10 +176,10 @@ async function getTabs(duplicates = false) {
 
             if (lastMessage === [] || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
                 websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
-                console.log("Tabs sent");
+                console.log("Tabs sent (duplicates = false):", tabList);
                 lastMessage = tabList;
             }
-            else { console.log("Duplicate message, not sent") }
+            // else { console.log("Duplicate message, not sent") }
         }
     } catch (error) { console.error("Error fetching tabs", error); }
 }
