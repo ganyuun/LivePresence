@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg.request === "ping") {
         try {
-            websocket.send(JSON.stringify({type: "hello", message: "ping"}));
+            websocket.send(JSON.stringify({type: "hello", message: "from extension popup"}));
             sendResponse({recipient: "popup.js", request: "pong"});
         } catch (error) {
             console.error("Unable to send message:", error)
@@ -131,14 +131,12 @@ async function getTabs(duplicates = false) {
 
         if (tabs.length > 0) {
             for (const tab of tabs) {
-                if ( (presences.videoType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) {
+                if ( presences.videoType.includes(tab.url.replace(regex.urlRegex, "")) ) {
                     activityType = 'WATCHING';
 
                     const [vidCurrentTime, vidDuration] = await getVidInfo(tab.id);
 
-                    // console.log('vidDuration and vidCurrentTime:', vidCurrentTime, vidDuration);
-
-                    if ((tab.url).includes("youtube")) {
+                    if (tab.url.includes("youtube.com/watch")) {
                         tabList.push( {
                             'tabId': tab.id, 
                             'name': 'YouTube', 
@@ -148,11 +146,12 @@ async function getTabs(duplicates = false) {
                             'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
                             'currentTime': vidCurrentTime, 
                             'duration': vidDuration, 
-                            'timeSent': Date.now()} );
+                            'timeSent': Date.now(),
+                            'audible': tab.audible } );
                         continue
                     }
                 }
-                else if ( (presences.musicType).includes( (tab.url.replace(regex.urlRegex, "")) ) ) { activityType = 'LISTENING'; }
+                else if ( presences.musicType.includes(tab.url.replace(regex.urlRegex, ""))) { activityType = 'LISTENING'; }
                 else { activityType = 'PLAYING'; }
 
                 tabList.push({
@@ -179,7 +178,7 @@ async function getTabs(duplicates = false) {
                 console.log("Tabs sent (duplicates = false):", tabList);
                 lastMessage = tabList;
             }
-            // else { console.log("Duplicate message, not sent") }
+            else { console.log("Duplicate message, not sent:", tabList) }
         }
     } catch (error) { console.error("Error fetching tabs", error); }
 }
