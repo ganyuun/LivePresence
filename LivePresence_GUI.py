@@ -6,6 +6,8 @@ from Presences import Presence, VideoPresence, MusicPresence
 
 serverStarted = False
 
+# websockets.exceptions.ConnectionClosedError: sent 1011 (internal error) keepalive ping timeout; no close frame received
+# do try except connectionclosed later, make websocket reconnect if it runs into issues
 async def startWebsocket():
     global serverStarted
     serverStarted = True
@@ -82,7 +84,7 @@ async def hello(websocket):
 
 async def setPresence(presence: Presence, RPC: discordrpc.RPC, websocket):
     try:
-        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime) + 30)
+        expectedEndTime = datetime.fromtimestamp((presence.timeSent / 1000) + (presence.duration - presence.currentTime) + 10)
 
         print("Expected End Time: ", expectedEndTime.strftime("%Y-%m-%d %H:%M:%S"))
 

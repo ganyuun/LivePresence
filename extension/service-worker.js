@@ -3,7 +3,6 @@ let presences = [];
 let tabList = [];
 let lastMessage = [];
 let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: null, urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
-let websocketActive = false;
 let debounceTimer;
 
 function connectWebSocket(websocket) {
@@ -49,10 +48,15 @@ function addChromeListeners() {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    console.log("Message received from", sender, ":", msg);
+    console.log("Service worker received message from", sender.id, ":", msg);
 
     if (msg.request === "ping") {
-        if (websocketActive) { sendResponse({recipient: "popup.js", request: "Websocket active!"}) }
+        try {
+            websocket.send(JSON.stringify({type: "hello", message: "ping"}));
+            sendResponse({recipient: "popup.js", request: "pong"});
+        } catch (error) {
+            console.error("Unable to send message:", error)
+        }
     }
 });
 
@@ -65,10 +69,7 @@ async function notifyContent(recipient, request, tabId) {
 websocket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data)
 
-    if (msg.type === "hello") {
-        websocketActive = true;
-        console.log("Received hello:", msg);
-    }
+    if (msg.type === "hello") { console.log("Received hello:", msg); }
 
     if (msg.type === "enabledPresences") {
         const response = msg.message
