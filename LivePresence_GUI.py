@@ -19,18 +19,21 @@ async def startWebsocket():
 
 async def hello(websocket):
     RPC = discordrpc.RPC(app_id = clientID)
+    newTabsEvent = asyncio.Event()
 
     try:
         async for msgJSON in websocket:
-            msg = json.loads(msgJSON)
+            msgDict = json.loads(msgJSON)
 
-            if msg.get('type') == 'hello': 
+            msgType = msgDict.get('type')
+            msgMessage = msgDict.get('message')
+
+            if msgType == 'hello': 
                 response = json.dumps({'type': 'hello', 'message': 'pong'})
                 await websocket.send(response)
 
-                if msg.get('message') != 'from extension popup':
-                    print(f'Sent hello! {response}')
-            elif msg.get('type') == 'enabledPresences':
+                if msgMessage != 'from extension popup': print(f'Sent hello! {response}')
+            elif msgType == 'enabledPresences':
                 enabledPresences = app.storage.general['enabledPresences']
                 presenceInfo = app.storage.general['presenceInfo']
 
@@ -43,52 +46,64 @@ async def hello(websocket):
                 response = json.dumps({'type': 'enabledPresences', 'message': filteredPresenceInfo})
                 await websocket.send(response)
                 print(f'Sent enabled presences! {response}')
-            elif msg.get('type') == 'clear':
+            elif msgType == 'clear':
                 print('Status cleared on request from extension.')
                 RPC.clear()
-            elif msg.get('type') == 'tabs':
-                if len(msg.get('message')) > 0:
-                    newActivity = createActivity(msg.get('message'))
-                    
+            elif msgType == 'tabs':
+                newTabsEvent.set()
+
+                if len(msgMessage) > 0:
+                    newActivity = createActivity(msgMessage)
+
                     expectedEndTime = datetime.fromtimestamp((newActivity.timeSent / 1000) + (newActivity.duration - newActivity.currentTime))
-                    
-                    await asyncio.gather(setPresence(newActivity, RPC), checkTime(expectedEndTime, websocket))
+                    timePollingTask = asyncio.create_task(checkTime(expectedEndTime, newTabsEvent))
+                    result = await timePollingTask
+
+                    setPresence(newActivity, RPC)
+
+                    if result == 1:
+                        print('timePollingTask returned 1')
+                        response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                        await websocket.send(response)
                 else: RPC.clear()
             else:
                 response = json.dumps({'type': 'received', 'message': 'OK'})
                 await websocket.send(response)
-                print(f'Received: {msg}')
+                print(f'Received: {msgDict}')
     except websockets.exceptions.ConnectionClosedOK:
         pass
 
 def createActivity(tabs):
     presencePriority = app.storage.general['presencePriority']
 
-    for i in range(len(tabs)):
-        tabType = tabs[i].get('activityType')
-        try:
-            if tabType in ['WATCHING', 'LISTENING'] and tabs[i].get('audible') == False:
-                tabs.pop(i)
-                i -= 1
-                continue
-            
-            tabs[i].update( {'priority': presencePriority.index(tabs[i].get("name"))} )
-        except ValueError: tabs[i].update( {'priority': -1} )
+    # assign priority to presences based on how they're ordered in the GUI
+    # if a Watching/Listening presence is open, reduce priority by 1 if it's muted (ex. if you have multiple YouTube tabs open, display the one that's actually playing)
+    for tab in tabs:
+        tabType = tab.get('activityType')
 
-    """for activity in tabs:
-        try: activity.update( {'priority': presencePriority.index(activity.get("name"))} )
-        except ValueError: activity.update( {'priority': -1} )"""
+        try:
+            if (tabType in ['WATCHING', 'LISTENING'] and (tab.get('audible') == True or tab.get('active') == True)) or (tabType not in ['WATCHING', 'LISTENING']):
+                tab.update( {'priority': presencePriority.index(tab.get("name"))} )
+            elif tabType in ['WATCHING', 'LISTENING'] and tab.get('audible') == False:
+                tab.update( {'priority': presencePriority.index(tab.get("name")) - 1} )
+        except ValueError: 
+            tab.update( {'priority': -1} )
     
     highPriority = sorted(tabs, key = lambda x: x['priority'], reverse = True)[0]
 
     print('Highest priority activity:', highPriority)
 
     if highPriority.get('activityType') == 'WATCHING':
+        currentTime = highPriority.get('currentTime')
+        
+        # allowing a little bit of desync in case currentTime is ahead of actual time
+        if currentTime > 5: currentTime -= 5
+
         activity = VideoPresence(
             name = highPriority.get('name'), 
             type = highPriority.get('activityType'),
             details = highPriority.get('details'), 
-            currentTime = highPriority.get('currentTime'),
+            currentTime = currentTime,
             duration = highPriority.get('duration'),
             thumbnail = highPriority.get('thumbnail', ''),
             state_url = highPriority.get('url'),
@@ -115,7 +130,7 @@ def createActivity(tabs):
     
     return activity
 
-async def setPresence(presence: Presence, RPC: discordrpc.RPC):
+def setPresence(presence: Presence, RPC: discordrpc.RPC):
     try:
         if (presence.type in ['WATCHING', 'LISTENING']):
             RPC.set_activity(
@@ -137,18 +152,27 @@ async def setPresence(presence: Presence, RPC: discordrpc.RPC):
     except RPCException as e:
         print(f'Error when trying to set status: {e}')
 
-async def checkTime(endTime, websocket):
-    print("Expected End Time:", endTime.strftime("%Y-%m-%d %H:%M:%S"))
+async def checkTime(endTime, event: asyncio.Event):
+    print("Expected End Time:", endTime.strftime("%I:%M:%S"))
 
-    # compare current time to expected end time so that activities don't stick for longer than expected
-    while True:
-        if (datetime.now() > endTime):
-            print('Current time has passed expectedEndTime. Requesting new tab information.')
-            response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
-            await websocket.send(response)
-            break
-        
-        await asyncio.sleep(10)
+    now = datetime.now()
+
+    endTimeSeconds = endTime - now
+    endTimeSeconds = endTimeSeconds.total_seconds()
+
+    # if the user navigates to a new tab in enabledPresences, it triggers the newTabEvent
+    # returning 0 prevents checkTime() from asking for new tabs thru websocket
+    try:
+        async with asyncio.timeout(endTimeSeconds):
+            now = datetime.now()
+            await event.wait()
+            print(f'[{now.strftime("%I:%M %p")}]: Received new tabs, cancelling checkTime() timeout.')
+            event.clear()
+            return 0
+    except TimeoutError:
+        now = datetime.now()
+        print(f'[{now.strftime("%I:%M %p")}]: Current time has passed expectedEndTime. Requesting new tab information.')
+        return 1
 
 async def setup():
     container = ui.row()

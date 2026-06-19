@@ -140,6 +140,8 @@ async function getTabs(duplicates = false) {
 
         tabList = [];
 
+        console.log("Original tabs:", tabs)
+
         if (tabs.length > 0) {
             for (const tab of tabs) {
                 let tabName = tab.url.replace(regex.urlRegex, "");
@@ -160,6 +162,7 @@ async function getTabs(duplicates = false) {
                             'currentTime': vidCurrentTime, 
                             'duration': vidDuration, 
                             'timeSent': Date.now(),
+                            'active': tab.active,
                             'audible': tab.audible } );
                         continue
                     }
