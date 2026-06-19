@@ -69,6 +69,7 @@ def createActivity(tabs):
         try:
             if tabType in ['WATCHING', 'LISTENING'] and tabs[i].get('audible') == False:
                 tabs.pop(i)
+                i -= 1
                 continue
             
             tabs[i].update( {'priority': presencePriority.index(tabs[i].get("name"))} )
@@ -83,7 +84,7 @@ def createActivity(tabs):
     print('Highest priority activity:', highPriority)
 
     if highPriority.get('activityType') == 'WATCHING':
-        newActivity = VideoPresence(
+        activity = VideoPresence(
             name = highPriority.get('name'), 
             type = highPriority.get('activityType'),
             details = highPriority.get('details'), 
@@ -94,7 +95,7 @@ def createActivity(tabs):
             timeSent = highPriority.get('timeSent')
         )
     elif highPriority.get('activityType') == 'LISTENING':
-        newActivity = MusicPresence(
+        activity = MusicPresence(
             name = highPriority.get('name'), 
             type = highPriority.get('activityType'),
             details = highPriority.get('details'), 
@@ -105,14 +106,14 @@ def createActivity(tabs):
             timeSent = highPriority.get('timeSent')
         )
     else:
-        newActivity = Presence(
+        activity = Presence(
             name = highPriority.get('name'),
             type = highPriority.get('activityType'),
             details = highPriority.get('details'), 
             timeSent = highPriority.get('timeSent')
         )
     
-    return newActivity
+    return activity
 
 async def setPresence(presence: Presence, RPC: discordrpc.RPC):
     try:

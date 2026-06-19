@@ -26,7 +26,14 @@ function connectWebSocket(websocket) {
 
 function addChromeListeners() {
     chrome.tabs.onUpdated.addListener(() => {
-        debounceTimer = setTimeout(() => { getTabs(); }, 1000);
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(async () => { 
+            const tabs = await getTabs();
+            if (tabs !== 'duplicate') {
+                console.log("Tabs sent (duplicates = false):", tabs);
+                websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
+            }
+        }, 1000);
     });
 
     chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
@@ -67,12 +74,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
-async function notifyContent(recipient, request, tabId) {
-    try {
-        response = await chrome.tabs.sendMessage( tabId, {recipient: recipient, request: request} ); 
-    } catch (error) { console.error("Unable to send message:", error); }
-}
-
 websocket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data)
 
@@ -93,11 +94,21 @@ websocket.addEventListener("message", (event) => {
         presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" )
     }
 
-    if (msg.type === 'tabs') { getTabs(true); }
+    if (msg.type === 'tabs') {
+        clearTimeout(debounceTimer);
+
+        debounceTimer = setTimeout(async () => { 
+            const tabs = await getTabs(true);
+            console.log("Tabs sent (duplicates = true):", tabs);
+            websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
+        }, 1000);
+    }
 });
 
-const getVidInfo = (tabId, interval = 1000) => {
+const getVidInfo = (tabId) => {
     return new Promise((resolve) => {
+        let interval = 1000;
+
         const check = async () => {
             const [{result: result1}] = await chrome.scripting.executeScript({
                 target: { tabId: tabId },
@@ -112,8 +123,8 @@ const getVidInfo = (tabId, interval = 1000) => {
             let vidCurrentTime = result1;
             let vidDuration = result2;
 
-            if (vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
-            else { setTimeout(check, interval) }
+            if (typeof vidDuration != "undefined" && typeof vidCurrentTime != "undefined") { resolve([vidCurrentTime, vidDuration]); }
+            else { setTimeout(check, interval); }
         };
         check();
     });
@@ -131,7 +142,9 @@ async function getTabs(duplicates = false) {
 
         if (tabs.length > 0) {
             for (const tab of tabs) {
-                if ( presences.videoType.includes(tab.url.replace(regex.urlRegex, "")) ) {
+                let tabName = tab.url.replace(regex.urlRegex, "");
+
+                if ( presences.videoType.includes(tabName) ) {
                     activityType = 'WATCHING';
 
                     const [vidCurrentTime, vidDuration] = await getVidInfo(tab.id);
@@ -151,7 +164,7 @@ async function getTabs(duplicates = false) {
                         continue
                     }
                 }
-                else if ( presences.musicType.includes(tab.url.replace(regex.urlRegex, ""))) { activityType = 'LISTENING'; }
+                else if ( presences.musicType.includes(tabName)) { activityType = 'LISTENING'; }
                 else { activityType = 'PLAYING'; }
 
                 tabList.push({
@@ -163,24 +176,28 @@ async function getTabs(duplicates = false) {
         }
 
         if (duplicates === true) {
-            websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
-            console.log("Tabs sent (duplicates = true):", tabList);
             lastMessage = tabList;
+            return tabList;
         }
         else {
             const newDetails = tabList.map( (dict) => dict.details );
             let lastDetails = [];
 
-            if (lastMessage !== []) { lastDetails = lastMessage.map( (dict) => dict.details ); }
-
-            if (lastMessage === [] || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
-                websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
-                console.log("Tabs sent (duplicates = false):", tabList);
+            if (lastMessage.length > 0) { lastDetails = lastMessage.map( (dict) => dict.details ); }
+            
+            if (lastMessage.length === 0 || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
                 lastMessage = tabList;
+                return tabList;
             }
-            else { console.log("Duplicate message, not sent:", tabList) }
+            else { 
+                console.log("Duplicate message, not sent:", tabList)
+                return "duplicate";
+            }
         }
-    } catch (error) { console.error("Error fetching tabs", error); }
+    } catch (error) { 
+        console.error("Error fetching tabs", error);
+        return [];
+    }
 }
 
 connectWebSocket(websocket)
