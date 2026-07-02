@@ -303,6 +303,7 @@ async function activityFormatting(tab, duplicateStatus) {
                 'duplicates': duplicateStatus
             };
         }
+        else { return undefined; }
     }
     else { activityType = 'PLAYING'; }
 
