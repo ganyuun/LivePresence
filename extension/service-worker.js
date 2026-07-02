@@ -169,11 +169,11 @@ async function activityFormatting(tab, duplicateStatus) {
     let activityType;
     let vidDuration;
 
-    // won't return inactive video tabs
     if ( presences.videoType.includes(tabName) ) {
         activityType = 'WATCHING';
 
-        if (tab.active === true) {
+        // this tab.audible condition will exclude video tabs that are paused
+        if (tab.audible === true) {
             const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
             getTabInfo(tab.id, 'videoActivityListeners');
 
