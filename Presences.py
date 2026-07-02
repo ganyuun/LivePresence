@@ -62,7 +62,7 @@ class VideoPresence(Presence):
 
     async def checkTime(self, websocket):
         # estimate video endTime by converting timeSent unix timestamp to seconds, adding remaining seconds in video, then adding 10s in case
-        endTime = datetime.fromtimestamp((self.timeSent / 1000) + (self.duration - self.currentTime) + 10)
+        endTime = datetime.fromtimestamp((self.timeSent / 1000) + (self.duration - self.currentTime) + 5)
 
         now = datetime.now()
 

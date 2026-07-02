@@ -229,13 +229,9 @@ const getTabInfo = (tabId, infoType) => {
                     let thumbnail = result3.split('"')[1];
                     let url = result4.replace(RegExp("(\\?).*", "g"), "");
 
-                    console.log('SoundCloud thumbnail and link:', thumbnail, url);
-
                     songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
                     songDuration = (songDuration[0] * 60) + songDuration[1];
                             
-                    console.log('songCurrentTime and songDuration after int conversion:', songCurrentTime, songDuration);
-
                     if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url]); }
                     else { setTimeout(check, interval); }
                 };
