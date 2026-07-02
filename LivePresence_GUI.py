@@ -23,6 +23,8 @@ async def hello(websocket):
     # temporary, will be changed into a task later if a video activity is used
     timePollingTask = None
 
+    newActivity = None
+
     try:
         async for msgJSON in websocket:
             msgDict = json.loads(msgJSON)
@@ -32,7 +34,7 @@ async def hello(websocket):
                 case 'hello':
                     response = json.dumps({'type': 'hello', 'message': 'pong'})
                     await websocket.send(response)
-                    if msgMessage != 'from extension popup': print(f'Sent hello! {response}')
+                    if msgMessage != 'from extension popup' and msgMessage != 'keep alive': print(f'Sent hello! {response}')
                 case 'enabledPresences':
                     enabledPresences = app.storage.general['enabledPresences']
                     presenceInfo = app.storage.general['presenceInfo']
@@ -80,6 +82,9 @@ async def hello(websocket):
                         if timePollingTask is not None and newActivity.type in {'WATCHING', 'LISTENING'}: 
                             timePollingTask.cancel()
                             timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
+                    else:
+                        response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                        await websocket.send(response)
                 case _:
                     response = json.dumps({'type': 'received', 'message': 'OK'})
                     await websocket.send(response)
@@ -101,43 +106,43 @@ def createActivity(tabs):
     print('\nHighest priority activity:', highPriority)
 
     if None in {highPriority['currentTime'], highPriority['duration']}: return None
-
-    try:
-        match highPriority.get('activityType'):
-            case 'WATCHING':
-                activity = VideoPresence(
-                    name = highPriority.get('name'), 
-                    type = highPriority.get('activityType'),
-                    details = highPriority.get('details'), 
-                    currentTime = highPriority.get('currentTime'),
-                    duration = highPriority.get('duration'),
-                    thumbnail = highPriority.get('thumbnail', ''),
-                    state_url = highPriority.get('url'),
-                    timeSent = highPriority.get('timeSent')
-                )
-            case 'LISTENING':
-                activity = MusicPresence(
-                    name = highPriority.get('name'), 
-                    type = highPriority.get('activityType'),
-                    details = highPriority.get('details'), 
-                    currentTime = highPriority.get('currentTime'),
-                    duration = highPriority.get('duration'),
-                    thumbnail = highPriority.get('thumbnail', ''),
-                    state_url = highPriority.get('url'),
-                    timeSent = highPriority.get('timeSent')
-                )
-            case _:
-                activity = Presence(
-                    name = highPriority.get('name'),
-                    type = highPriority.get('activityType'),
-                    details = highPriority.get('details'), 
-                    timeSent = highPriority.get('timeSent')
-                )
-    except ValueError:
-        print('Invalid Activity Type provided by extension.')
-        raise
+    else:
+        try:
+            match highPriority.get('activityType'):
+                case 'WATCHING':
+                    activity = VideoPresence(
+                        name = highPriority.get('name'), 
+                        type = highPriority.get('activityType'),
+                        details = highPriority.get('details'), 
+                        currentTime = highPriority.get('currentTime'),
+                        duration = highPriority.get('duration'),
+                        thumbnail = highPriority.get('thumbnail', ''),
+                        state_url = highPriority.get('url'),
+                        timeSent = highPriority.get('timeSent')
+                    )
+                case 'LISTENING':
+                    activity = MusicPresence(
+                        name = highPriority.get('name'), 
+                        type = highPriority.get('activityType'),
+                        details = highPriority.get('details'), 
+                        currentTime = highPriority.get('currentTime'),
+                        duration = highPriority.get('duration'),
+                        thumbnail = highPriority.get('thumbnail', ''),
+                        state_url = highPriority.get('url'),
+                        timeSent = highPriority.get('timeSent')
+                    )
+                case _:
+                    activity = Presence(
+                        name = highPriority.get('name'),
+                        type = highPriority.get('activityType'),
+                        details = highPriority.get('details'), 
+                        timeSent = highPriority.get('timeSent')
+                    )
+        except ValueError:
+            print('Invalid Activity Type provided by extension.')
+            raise
     
-    return activity
+        return activity
 
 async def setup():
     container = ui.row()

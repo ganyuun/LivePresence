@@ -5,6 +5,9 @@ let lastMessage = [];
 let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: new RegExp(), urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
 let debounceTimer;
 
+// to ensure that the extension runs perpetually
+setInterval( function() { websocket.send(JSON.stringify({type: "hello", message: "keep alive"})); }, 20000 )
+
 function connectWebSocket(websocket) {
     return new Promise((resolve, reject) => {
         websocket.onopen = () => {
