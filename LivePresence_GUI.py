@@ -48,6 +48,8 @@ async def hello(websocket):
                 case 'clear':
                     print('Status cleared on request from extension.')
                     RPC.clear()
+
+                    if timePollingTask is not None: timePollingTask.cancel()
                 case 'tabs':
                     if len(msgMessage) > 0:
                         # this check is mainly for video activities. duplicates = True when looping a video
@@ -62,19 +64,22 @@ async def hello(websocket):
                         else:
                             newActivity.setPresence(RPC)
 
-                            if newActivity.type == 'WATCHING' or newActivity.type == 'LISTENING':
+                            if newActivity.type in {'WATCHING', 'LISTENING'}:
                                 timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
-                                
+
                     else: RPC.clear()
                 case 'checkRPC':
-                    isRunning = RPC.is_running
+                    print('\nCheckRPC message received.')
+                    response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                    await websocket.send(response)
+                case 'seeked':
+                    if newActivity is not None:
+                        newActivity.currentTime = msgMessage
+                        newActivity.setPresence(RPC)
 
-                    if isRunning:
-                        print(f'{isRunning}, RPC is running! No changes to RPC needed.')
-                    else:
-                        print(f'{isRunning}, requesting tabs!')
-                        response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
-                        await websocket.send(response)
+                        if timePollingTask is not None and newActivity.type in {'WATCHING', 'LISTENING'}: 
+                            timePollingTask.cancel()
+                            timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
                 case _:
                     response = json.dumps({'type': 'received', 'message': 'OK'})
                     await websocket.send(response)
@@ -93,7 +98,7 @@ def createActivity(tabs):
     
     highPriority = sorted(tabs, key = lambda x: x['priority'], reverse = True)[0]
 
-    print('Highest priority activity:', highPriority)
+    print('\nHighest priority activity:', highPriority)
 
     if None in {highPriority['currentTime'], highPriority['duration']}: return None
 

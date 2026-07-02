@@ -78,7 +78,7 @@ class VideoPresence(Presence):
                 await asyncio.sleep(endTimeSeconds)
         except asyncio.CancelledError:
             now = datetime.now()
-            print(f'\n[{now.strftime("%I:%M %p")}]: New tabs have been received, checkTime() timeout cancelled.\n')
+            print(f'\n[{now.strftime("%I:%M %p")}]: checkTime() timeout was cancelled (either new tabs were received, or seeking).\n')
         except TimeoutError:
             now = datetime.now()
             print(f'[{now.strftime("%I:%M %p")}]: Current time has passed expectedEndTime. Requesting new tab information.\n')

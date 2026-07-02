@@ -57,20 +57,32 @@ function addChromeListeners() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     console.log("Service worker received message from", sender.id, ":", msg);
 
-    if (msg.request === "ping") {
-        try {
-            websocket.send(JSON.stringify({type: "hello", message: "from extension popup"}));
-            sendResponse({recipient: "popup.js", request: "pong"});
-        } catch (error) {
-            console.error("Unable to send message:", error)
-        }
-    }
-    else if (msg.request === 'clear') {
-        try {
-            websocket.send( JSON.stringify({type: "clear", message: "clear"}) );
-            console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
-        }
-        catch (error) { console.error("Unable to send message:", error) }
+    switch (msg.request) {
+        case 'ping':
+            try {
+                websocket.send(JSON.stringify({type: "hello", message: "from extension popup"}));
+                sendResponse({recipient: "popup.js", request: "pong"});
+            } catch (error) {
+                console.error("Unable to send message:", error)
+            }
+        case 'clear':
+            try {
+                websocket.send( JSON.stringify({type: "clear", message: "clear"}) );
+                console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
+            }
+            catch (error) { console.error("Unable to send message:", error) }
+        case 'checkRPC':
+            try {
+                websocket.send( JSON.stringify({type: "checkRPC", message: ""}) );
+                console.log("Sent message to Python script to check RPC:", {type: "checkRPC", message: ""})
+            }
+            catch (error) { console.error("Unable to send message:", error) }
+        case 'seeked':
+            try {
+                websocket.send( JSON.stringify({type: "seeked", message: msg.details}) );
+                console.log("Sent message to Python script about video seeking:", {type: "seeked", message: msg.details})
+            }
+            catch (error) { console.error("Unable to send message:", error) }
     }
 });
 
@@ -151,12 +163,37 @@ const getTabInfo = (tabId, infoType) => {
             const video = document.querySelector('video')
 
             if (video) {
+                let webpageFirstLoadPlaying = true;
+                let webpageFirstLoadPause = true;
+
                 // if RPC was cleared after pausing, then it should be set after the video has started playing again
                 // using "checkRPC" so that the python script can determine whether RPC is already active (and ignore this request if it is)
-                video.onplay = (event) => { websocket.send( JSON.stringify({type: "checkRPC", message: ""}) ); }
+                video.onplaying = (event) => { 
+                    if (webpageFirstLoadPlaying) {
+                        webpageFirstLoad = false;
+                        return;
+                    }
+
+                    console.log('Video resumed.');
+                    chrome.runtime.sendMessage({recipient: "service-worker", request: "checkRPC"});
+                }
                 
                 // RPC should clear when video is paused
-                video.onpause = (event) => { websocket.send( JSON.stringify({type: "clear", message: "clear"}) ); }
+                video.onpause = (event) => { 
+                    if (webpageFirstLoadPause) {
+                        webpageFirstLoad = false;
+                        return;
+                    }
+
+                    console.log('Video paused.');
+                    chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
+                }
+
+                video.onseeked = (event) => {
+                    console.log('Seeked to', video.currentTime);
+                    chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime});
+                }
+                
             }
         }
 
@@ -172,7 +209,7 @@ async function activityFormatting(tab, duplicateStatus) {
     if ( presences.videoType.includes(tabName) ) {
         activityType = 'WATCHING';
 
-        // this tab.audible condition will exclude video tabs that are paused
+        // this tab.audible condition excludes video tabs that are paused, same effect as tab.active but not as strict
         if (tab.audible === true) {
             const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
             getTabInfo(tab.id, 'videoActivityListeners');
