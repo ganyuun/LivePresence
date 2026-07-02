@@ -2,7 +2,7 @@ const websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
-let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: null, urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
+let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: new RegExp(), urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
 let debounceTimer;
 
 function connectWebSocket(websocket) {
@@ -105,76 +105,131 @@ websocket.addEventListener("message", (event) => {
     }
 });
 
-const getVidInfo = (tabId) => {
-    return new Promise((resolve) => {
-        let interval = 1000;
+const getTabInfo = (tabId, infoType) => {
+    let interval = 1000;
 
-        const check = async () => {
-            const [{result: result1}] = await chrome.scripting.executeScript({
-                target: { tabId: tabId },
-                func: () => document.querySelector('video')?.currentTime
-            });
-            
-            const [{result: result2}] = await chrome.scripting.executeScript({
-                        target: { tabId: tabId },
-                        func: () => document.querySelector('video')?.duration
-                    });
+    if (infoType === 'video') {
+        return new Promise((resolve) => {
+            const check = async () => {
+                const [{result: result1}] = await chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    func: () => document.querySelector('video')?.currentTime
+                });
+                
+                const [{result: result2}] = await chrome.scripting.executeScript({
+                            target: { tabId: tabId },
+                            func: () => document.querySelector('video')?.duration
+                        });
 
-            let vidCurrentTime = result1;
-            let vidDuration = result2;
+                let vidCurrentTime = result1;
+                let vidDuration = result2;
 
-            if (typeof vidDuration != "undefined" && typeof vidCurrentTime != "undefined") { resolve([vidCurrentTime, vidDuration]); }
-            else { setTimeout(check, interval); }
-        };
-        check();
-    });
+                if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
+                else { setTimeout(check, interval); }
+            };
+            check();
+        });
+    }
+    else if (infoType === 'miruroThumbnail') {
+        return new Promise((resolve) => {
+            const check = async () => {
+                const {result: result} = await chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    func: () => document.querySelector('._coverImg_2wrhc_89').src
+                });
+
+                let thumbnail = result;
+
+                if (typeof thumbnail != null) { resolve(thumbnail); }
+                else { setTimeout(check, interval); }
+            };
+            check();
+        });
+    }
+    else if (infoType === 'videoActivityListeners') {
+        function videoActivityListeners() {
+            const video = document.querySelector('video')
+
+            if (video) {
+                // if RPC was cleared after pausing, then it should be set after the video has started playing again
+                // using "checkRPC" so that the python script can determine whether RPC is already active (and ignore this request if it is)
+                video.onplay = (event) => { websocket.send( JSON.stringify({type: "checkRPC", message: ""}) ); }
+                
+                // RPC should clear when video is paused
+                video.onpause = (event) => { websocket.send( JSON.stringify({type: "clear", message: "clear"}) ); }
+            }
+        }
+
+        chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
+    }
+}
+
+async function activityFormatting(tab, duplicateStatus) {
+    let tabName = tab.url.replace(regex.urlRegex, "");
+    let activityType;
+    let vidDuration;
+
+    // won't return inactive video tabs
+    if ( presences.videoType.includes(tabName) ) {
+        activityType = 'WATCHING';
+
+        if (tab.active === true) {
+            const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
+            getTabInfo(tab.id, 'videoActivityListeners');
+
+            if (tab.url.includes("youtube.com/watch")) {
+                return {
+                    'tabId': tab.id, 
+                    'name': 'YouTube', 
+                    'details': (tab.title).replace(RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), ''), 
+                    'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
+                    'activityType': activityType, 
+                    'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
+                    'currentTime': vidCurrentTime, 
+                    'duration': vidDuration,
+                    'timeSent': Date.now(),
+                    'duplicates': duplicateStatus };
+            }
+            if (tab.url.includes("miruro.tv/watch")) {
+                let thumbnail = getTabInfo(tab.id, 'miruroThumbnail');
+
+                return {
+                    'tabId': tab.id, 
+                    'name': 'Miruro', 
+                    'details': (tab.title).replace(RegExp("\s·\sMiruro", "g"), ''), 
+                    'url': tab.url,
+                    'activityType': activityType, 
+                    'thumbnail': thumbnail,
+                    'currentTime': vidCurrentTime, 
+                    'duration': vidDuration, 
+                    'timeSent': Date.now(),
+                    'duplicates': duplicateStatus };
+            }
+        }
+        else { return undefined; }
+    }
+    else if ( presences.musicType.includes(tabName)) { activityType = 'LISTENING'; }
+    else { activityType = 'PLAYING'; }
+
+    tabList.push({
+        'tabId': tab.id, 
+        'name': tab.title, 
+        'url': tab.url, 
+        'activityType': activityType,
+        'duplicates': duplicateStatus});
 }
 
 async function getTabs(duplicates = false) {
     try {
-        let activityType = ""
-
-        let vidDuration;
-        
         const tabs = await chrome.tabs.query({ url: presences.acceptedURLs });
 
         tabList = [];
 
-        console.log("Original tabs:", tabs)
-
         if (tabs.length > 0) {
             for (const tab of tabs) {
-                let tabName = tab.url.replace(regex.urlRegex, "");
+                let activity = await activityFormatting(tab, duplicates);
 
-                if ( presences.videoType.includes(tabName) ) {
-                    activityType = 'WATCHING';
-
-                    const [vidCurrentTime, vidDuration] = await getVidInfo(tab.id);
-
-                    if (tab.url.includes("youtube.com/watch")) {
-                        tabList.push( {
-                            'tabId': tab.id, 
-                            'name': 'YouTube', 
-                            'details': (tab.title).replace(regex.YouTube, ''), 
-                            'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
-                            'activityType': activityType, 
-                            'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
-                            'currentTime': vidCurrentTime, 
-                            'duration': vidDuration, 
-                            'timeSent': Date.now(),
-                            'active': tab.active,
-                            'audible': tab.audible } );
-                        continue
-                    }
-                }
-                else if ( presences.musicType.includes(tabName)) { activityType = 'LISTENING'; }
-                else { activityType = 'PLAYING'; }
-
-                tabList.push({
-                    'tabId': tab.id, 
-                    'details': tab.title, 
-                    'url': tab.url, 
-                    'activityType': activityType});
+                if (activity != null) { tabList.push(activity) }
             }
         }
 
@@ -193,7 +248,6 @@ async function getTabs(duplicates = false) {
                 return tabList;
             }
             else { 
-                console.log("Duplicate message, not sent:", tabList)
                 return "duplicate";
             }
         }
