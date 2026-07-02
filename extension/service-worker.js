@@ -293,7 +293,7 @@ async function activityFormatting(tab, duplicateStatus) {
             return {
                 'tabId': tab.id,
                 'name': 'SoundCloud',
-                'details': tab.title.replace(RegExp("(\sby\s).*", "g"), ""),
+                'details': tab.title.replace(RegExp("(\\sby\\s).*", "g"), ""),
                 'url': url,
                 'activityType': activityType,
                 'thumbnail': thumbnail,
