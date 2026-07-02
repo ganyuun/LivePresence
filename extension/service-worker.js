@@ -92,7 +92,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 websocket.addEventListener("message", (event) => {
     const msg = JSON.parse(event.data)
 
-    if (msg.type === "hello") { console.log("Received hello:", msg); }
+    if (msg.type === "hello") {
+        if ( !msg.message.includes('silent') ) { console.log("Received hello:", msg); }
+    }
 
     if (msg.type === "enabledPresences") {
         const response = msg.message
@@ -148,14 +150,14 @@ const getTabInfo = (tabId, infoType) => {
     else if (infoType === 'miruroThumbnail') {
         return new Promise((resolve) => {
             const check = async () => {
-                const {result: result} = await chrome.scripting.executeScript({
+                const [{result}] = await chrome.scripting.executeScript({
                     target: { tabId: tabId },
                     func: () => document.querySelector('._coverImg_2wrhc_89').src
                 });
 
                 let thumbnail = result;
 
-                if (typeof thumbnail != null) { resolve(thumbnail); }
+                if (result) { resolve(thumbnail); }
                 else { setTimeout(check, interval); }
             };
             check();
@@ -231,12 +233,12 @@ async function activityFormatting(tab, duplicateStatus) {
                     'duplicates': duplicateStatus };
             }
             if (tab.url.includes("miruro.tv/watch")) {
-                let thumbnail = getTabInfo(tab.id, 'miruroThumbnail');
+                let thumbnail = await getTabInfo(tab.id, 'miruroThumbnail');
 
                 return {
                     'tabId': tab.id, 
                     'name': 'Miruro', 
-                    'details': (tab.title).replace(RegExp("\s·\sMiruro", "g"), ''), 
+                    'details': (tab.title).replace(RegExp(".*(Watch\\s)|(\\s·\\sMiruro)", "g"), ''), 
                     'url': tab.url,
                     'activityType': activityType, 
                     'thumbnail': thumbnail,

@@ -32,9 +32,12 @@ async def hello(websocket):
 
             match msgDict.get('type'):
                 case 'hello':
-                    response = json.dumps({'type': 'hello', 'message': 'pong'})
+                    if msgMessage != 'from extension popup' and msgMessage != 'keep alive': 
+                        response = json.dumps({'type': 'hello', 'message': 'pong'})
+                        print(f'Sent hello! {response}')
+                    else: response = json.dumps({'type': 'hello', 'message': 'pong - silent'})
+                    
                     await websocket.send(response)
-                    if msgMessage != 'from extension popup' and msgMessage != 'keep alive': print(f'Sent hello! {response}')
                 case 'enabledPresences':
                     enabledPresences = app.storage.general['enabledPresences']
                     presenceInfo = app.storage.general['presenceInfo']
@@ -210,15 +213,16 @@ async def home():
 @app.on_startup
 async def onStartup():
     if app.storage.general.get('presencePriority') is None: 
-        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud']
+        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud', 'Miruro']
 
     if app.storage.general.get('enabledPresences') is None:
-        app.storage.general['enabledPresences'] = ['YouTube', 'SoundCloud']
+        app.storage.general['enabledPresences'] = ['YouTube', 'SoundCloud', 'Miruro']
     
     if app.storage.general.get('presenceInfo') is None:
         app.storage.general['presenceInfo'] = [
             {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'}, 
-            {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'}
+            {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
+            {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'}
         ]
     
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
