@@ -2,7 +2,7 @@ const websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
-let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: new RegExp(), urlRegex: new RegExp("^(https:\\/\\/www.)|(.com).*|(.tv).*", "g") };
+let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: new RegExp(), urlRegex: new RegExp("^(https://)|(www.)|(.com).*|(.tv).*", "g") };
 let debounceTimer;
 
 // to ensure that the extension runs perpetually
@@ -125,84 +125,122 @@ websocket.addEventListener("message", (event) => {
 const getTabInfo = (tabId, infoType) => {
     let interval = 1000;
 
-    if (infoType === 'video') {
-        return new Promise((resolve) => {
-            const check = async () => {
-                const [{result: result1}] = await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    func: () => document.querySelector('video')?.currentTime
-                });
-                
-                const [{result: result2}] = await chrome.scripting.executeScript({
-                            target: { tabId: tabId },
-                            func: () => document.querySelector('video')?.duration
-                        });
+    switch (infoType) {
+        case 'video':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result: result1}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('video')?.currentTime
+                    });
+                    
+                    const [{result: result2}] = await chrome.scripting.executeScript({
+                                target: { tabId: tabId },
+                                func: () => document.querySelector('video')?.duration
+                            });
 
-                let vidCurrentTime = result1;
-                let vidDuration = result2;
+                    let vidCurrentTime = result1;
+                    let vidDuration = result2;
 
-                if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
-                else { setTimeout(check, interval); }
-            };
-            check();
-        });
-    }
-    else if (infoType === 'miruroThumbnail') {
-        return new Promise((resolve) => {
-            const check = async () => {
-                const [{result}] = await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    func: () => document.querySelector('._coverImg_2wrhc_89').src
-                });
+                    if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
+        case 'miruroThumbnail':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('._coverImg_2wrhc_89').src
+                    });
 
-                let thumbnail = result;
+                    let thumbnail = result;
 
-                if (result) { resolve(thumbnail); }
-                else { setTimeout(check, interval); }
-            };
-            check();
-        });
-    }
-    else if (infoType === 'videoActivityListeners') {
-        function videoActivityListeners() {
-            const video = document.querySelector('video')
+                    if (result) { resolve(thumbnail); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
+        case 'videoActivityListeners':
+            function videoActivityListeners() {
+                const video = document.querySelector('video')
 
-            if (video) {
-                let webpageFirstLoadPlaying = true;
-                let webpageFirstLoadPause = true;
+                if (video) {
+                    let webpageFirstLoadPlaying = true;
+                    let webpageFirstLoadPause = true;
 
-                // if RPC was cleared after pausing, then it should be set after the video has started playing again
-                // using "checkRPC" so that the python script can determine whether RPC is already active (and ignore this request if it is)
-                video.onplaying = (event) => { 
-                    if (webpageFirstLoadPlaying) {
-                        webpageFirstLoad = false;
-                        return;
+                    // if RPC was cleared after pausing, then it should be set after the video has started playing again
+                    // using "checkRPC" so that the python script can determine whether RPC is already active (and ignore this request if it is)
+                    video.onplaying = (event) => { 
+                        if (webpageFirstLoadPlaying) {
+                            webpageFirstLoad = false;
+                            return;
+                        }
+
+                        console.log('Video resumed.');
+                        chrome.runtime.sendMessage({recipient: "service-worker", request: "checkRPC"});
+                    }
+                    
+                    // RPC should clear when video is paused
+                    video.onpause = (event) => { 
+                        if (webpageFirstLoadPause) {
+                            webpageFirstLoad = false;
+                            return;
+                        }
+
+                        console.log('Video paused.');
+                        chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
                     }
 
-                    console.log('Video resumed.');
-                    chrome.runtime.sendMessage({recipient: "service-worker", request: "checkRPC"});
-                }
-                
-                // RPC should clear when video is paused
-                video.onpause = (event) => { 
-                    if (webpageFirstLoadPause) {
-                        webpageFirstLoad = false;
-                        return;
+                    video.onseeked = (event) => {
+                        console.log('Seeked to', video.currentTime);
+                        chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime});
                     }
-
-                    console.log('Video paused.');
-                    chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
+                    
                 }
-
-                video.onseeked = (event) => {
-                    console.log('Seeked to', video.currentTime);
-                    chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime});
-                }
-                
             }
-        }
 
-        chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
+            chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
+        case 'soundcloud':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result: result1}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
+                    });
+                    
+                    const [{result: result2}] = await chrome.scripting.executeScript({
+                                target: { tabId: tabId },
+                                func: () => document.querySelector('div.playbackTimeline__duration span[aria-hidden="true"]')?.textContent
+                            });
+
+                    const [{result: result3}] = await chrome.scripting.executeScript({
+                                target: { tabId: tabId },
+                                func: () => document.querySelector('a.playbackSoundBadge__avatar div.image__lightOutline span')?.style.backgroundImage
+                            });
+                    const [{result: result4}] = await chrome.scripting.executeScript({
+                                target: { tabId: tabId },
+                                func: () => document.querySelector('a.playbackSoundBadge__avatar')?.href
+                            });
+
+                    let songCurrentTime = result1.split(':').map(Number);
+                    let songDuration = result2.split(':').map(Number);
+                    let thumbnail = result3.split('"')[1];
+                    let url = result4.replace(RegExp("(\\?).*", "g"), "");
+
+                    console.log('SoundCloud thumbnail and link:', thumbnail, url);
+
+                    songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
+                    songDuration = (songDuration[0] * 60) + songDuration[1];
+                            
+                    console.log('songCurrentTime and songDuration after int conversion:', songCurrentTime, songDuration);
+
+                    if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url]); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
     }
 }
 
@@ -250,7 +288,26 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
-    else if ( presences.musicType.includes(tabName)) { activityType = 'LISTENING'; }
+    else if ( presences.musicType.includes(tabName) ) {
+        activityType = 'LISTENING';
+
+        if (tab.url.includes("soundcloud.com") && tab.audible && tab.title.includes(' by ') ) {
+            const [musicCurrentTime, musicDuration, thumbnail, url] = await getTabInfo(tab.id, 'soundcloud')
+
+            return {
+                'tabId': tab.id,
+                'name': 'SoundCloud',
+                'details': tab.title.replace(RegExp("(\sby\s).*", "g"), ""),
+                'url': url,
+                'activityType': activityType,
+                'thumbnail': thumbnail,
+                'currentTime': musicCurrentTime,
+                'duration': musicDuration,
+                'timeSent': Date.now(),
+                'duplicates': duplicateStatus
+            };
+        }
+    }
     else { activityType = 'PLAYING'; }
 
     tabList.push({
