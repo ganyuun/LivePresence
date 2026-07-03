@@ -1,7 +1,5 @@
 import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc
-# from datetime import datetime
 from nicegui import app, ui, background_tasks
-# from discordrpc import utils, RPCException
 from Presences import Presence, VideoPresence, MusicPresence
 
 serverStarted = False
@@ -106,7 +104,7 @@ def createActivity(tabs):
     
     highPriority = sorted(tabs, key = lambda x: x['priority'], reverse = True)[0]
 
-    print('\nHighest priority activity:', highPriority)
+    print('Highest priority activity:', highPriority, '\n')
 
     if highPriority['activityType'] in {'WATCHING', 'LISTENING'} and None in { highPriority.get('currentTime'), highPriority.get('duration') }: return None
     else:
