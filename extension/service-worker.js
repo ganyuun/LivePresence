@@ -203,6 +203,22 @@ const getTabInfo = (tabId, infoType) => {
 
             chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
         case 'soundcloud':
+            function soundcloudListener() {
+                    const progressBar = document.querySelector('.playbackTimeline__progressWrapper')
+
+                    if (progressBar) {
+                        progressBar.onclick = (event) => {
+                            let songCurrentTime = document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
+                            songCurrentTime = songCurrentTime.split(':').map(Number);
+                            songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
+
+                            chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: songCurrentTime})
+                        }
+                    }
+                }
+
+            chrome.scripting.executeScript({ target: {tabId: tabId}, func: soundcloudListener });
+
             return new Promise((resolve) => {
                 const check = async () => {
                     const [{result: result1}] = await chrome.scripting.executeScript({
@@ -224,16 +240,20 @@ const getTabInfo = (tabId, infoType) => {
                                 func: () => document.querySelector('a.playbackSoundBadge__avatar')?.href
                             });
 
-                    let songCurrentTime = result1.split(':').map(Number);
-                    let songDuration = result2.split(':').map(Number);
-                    let thumbnail = result3.split('"')[1];
-                    let url = result4.replace(RegExp("(\\?).*", "g"), "");
+                    try {
+                        let songCurrentTime = result1.split(':').map(Number);
+                        let songDuration = result2.split(':').map(Number);
+                        let thumbnail = result3.split('"')[1];
+                        let url = result4.replace(RegExp("(\\?).*", "g"), "");
 
-                    songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
-                    songDuration = (songDuration[0] * 60) + songDuration[1];
-                            
-                    if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url]); }
-                    else { setTimeout(check, interval); }
+                        songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
+                        songDuration = (songDuration[0] * 60) + songDuration[1];
+
+                        if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url]); }
+                        else { setTimeout(check, interval); }
+                    } catch (error) {
+                        if (!error instanceof TypeError) { console.log('Error in getting SoundCloud information.') }
+                    }
                 };
                 check();
             });
@@ -243,7 +263,6 @@ const getTabInfo = (tabId, infoType) => {
 async function activityFormatting(tab, duplicateStatus) {
     let tabName = tab.url.replace(regex.urlRegex, "");
     let activityType;
-    let vidDuration;
 
     if ( presences.videoType.includes(tabName) ) {
         activityType = 'WATCHING';
@@ -293,7 +312,7 @@ async function activityFormatting(tab, duplicateStatus) {
             return {
                 'tabId': tab.id,
                 'name': 'SoundCloud',
-                'details': tab.title.replace(RegExp("(\\sby\\s).*", "g"), ""),
+                'details': tab.title.replace(RegExp("\\s(?!.*\\sby\\s).*", "g"), ""),
                 'url': url,
                 'activityType': activityType,
                 'thumbnail': thumbnail,

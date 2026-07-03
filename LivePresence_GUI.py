@@ -108,7 +108,7 @@ def createActivity(tabs):
 
     print('\nHighest priority activity:', highPriority)
 
-    if None in {highPriority['currentTime'], highPriority['duration']}: return None
+    if highPriority['activityType'] in {'WATCHING', 'LISTENING'} and None in { highPriority.get('currentTime'), highPriority.get('duration') }: return None
     else:
         try:
             match highPriority.get('activityType'):
