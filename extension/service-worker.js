@@ -101,14 +101,15 @@ websocket.addEventListener("message", (event) => {
         const hostNames = response.map( (dict) => dict.hostName );
 
         presences = {
-            names: response.map( (dict) => dict.name ), 
             acceptedURLs: hostNames.map( (host) => `*://*.${host}/*` ), 
             videoType: response.map( dict => {if (dict.type === 'video') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
-            musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} )
+            musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
+            playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'} } )
         };
 
         presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" )
         presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" )
+        presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" )
     }
 
     if (msg.type === 'tabs') {
@@ -264,27 +265,26 @@ async function activityFormatting(tab, duplicateStatus) {
     let tabName = tab.url.replace(regex.urlRegex, "");
     let activityType;
 
-    if ( presences.videoType.includes(tabName) ) {
+    // tab.audible condition excludes video tabs that are paused, same effect as tab.active but not as strict
+    if ( presences.videoType.includes(tabName) && tab.audible ) {
         activityType = 'WATCHING';
+        
+        const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
+        getTabInfo(tab.id, 'videoActivityListeners');
 
-        // this tab.audible condition excludes video tabs that are paused, same effect as tab.active but not as strict
-        if (tab.audible === true) {
-            const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
-            getTabInfo(tab.id, 'videoActivityListeners');
-
-            if (tab.url.includes("youtube.com/watch")) {
-                return {
-                    'tabId': tab.id, 
-                    'name': 'YouTube', 
-                    'details': (tab.title).replace(RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), ''), 
-                    'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
-                    'activityType': activityType, 
-                    'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
-                    'currentTime': vidCurrentTime, 
-                    'duration': vidDuration,
-                    'timeSent': Date.now(),
-                    'duplicates': duplicateStatus };
-            }
+        if (tab.url.includes("youtube.com/watch")) {
+            return {
+                'tabId': tab.id, 
+                'name': 'YouTube', 
+                'details': (tab.title).replace(RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), ''), 
+                'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
+                'activityType': activityType, 
+                'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
+                'currentTime': vidCurrentTime, 
+                'duration': vidDuration,
+                'timeSent': Date.now(),
+                'duplicates': duplicateStatus };
+        
             if (tab.url.includes("miruro.tv/watch")) {
                 let thumbnail = await getTabInfo(tab.id, 'miruroThumbnail');
 
@@ -303,16 +303,21 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
-    else if ( presences.musicType.includes(tabName) ) {
+    else if ( presences.musicType.includes(tabName) && tab.audible ) {
         activityType = 'LISTENING';
+        let details;
 
-        if (tab.url.includes("soundcloud.com") && tab.audible && tab.title.includes(' by ') ) {
+        // soundcloud tabs are usually "{song title} by {artist}" if not in a playlist, or "{song title} in {playlist name}"
+        if (tab.url.includes("soundcloud.com") && ( tab.title.includes(' by ') || tab.title.includes(' in ') )) {
             const [musicCurrentTime, musicDuration, thumbnail, url] = await getTabInfo(tab.id, 'soundcloud')
+
+            if (tab.title.includes(' by ')) { details = tab.title.replace(RegExp("\\s(?!.*\\sby\\s).*", "g"), "") }
+            else if (tab.title.includes(' in ')) { details = tab.title.replace(RegExp("\\s(?!.*\\sin\\s).*", "g"), "") }
 
             return {
                 'tabId': tab.id,
                 'name': 'SoundCloud',
-                'details': tab.title.replace(RegExp("\\s(?!.*\\sby\\s).*", "g"), ""),
+                'details': details,
                 'url': url,
                 'activityType': activityType,
                 'thumbnail': thumbnail,
@@ -324,14 +329,17 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
-    else { activityType = 'PLAYING'; }
+    else if ( presences.playingType.includes(tabName) ) {
+        activityType = 'PLAYING';
 
-    tabList.push({
+        return {
         'tabId': tab.id, 
         'name': tab.title, 
         'url': tab.url, 
         'activityType': activityType,
-        'duplicates': duplicateStatus});
+        'duplicates': duplicateStatus};
+    }
+    else { return undefined; }
 }
 
 async function getTabs(duplicates = false) {

@@ -3,9 +3,26 @@ from nicegui import app, ui, background_tasks
 from Presences import Presence, VideoPresence, MusicPresence
 
 serverStarted = False
+connectedClients = set()
 
-# websockets.exceptions.ConnectionClosedError: sent 1011 (internal error) keepalive ping timeout; no close frame received
-# will try except connectionclosed later, make websocket reconnect if it runs into issues
+async def sendEnabledPresences():
+    enabledPresences = app.storage.general['enabledPresences']
+    presenceInfo = app.storage.general['presenceInfo']
+
+    print('Enabled presences and presenceInfo in function:', enabledPresences, presenceInfo)
+
+    filteredPresenceInfo = []
+
+    for site in enabledPresences:
+        if presenceInfo.get(site) is not None: filteredPresenceInfo.append(presenceInfo.get(site))
+
+    response = json.dumps({'type': 'enabledPresences', 'message': filteredPresenceInfo})
+    
+    for websocket in connectedClients:
+        await websocket.send(response)
+
+    print('Sent enabled presences!', response, '\n')
+
 async def startWebsocket():
     global serverStarted
     serverStarted = True
@@ -16,9 +33,11 @@ async def startWebsocket():
     print("Websocket started")
 
 async def hello(websocket):
+    connectedClients.add(websocket)
+
     RPC = discordrpc.RPC(app_id = clientID)
 
-    # temporary, will be changed into a task later if a video activity is used
+    # temporary, will be changed into a task later if a video/music activity is used
     timePollingTask = None
 
     newActivity = None
@@ -37,17 +56,7 @@ async def hello(websocket):
                     
                     await websocket.send(response)
                 case 'enabledPresences':
-                    enabledPresences = app.storage.general['enabledPresences']
-                    presenceInfo = app.storage.general['presenceInfo']
-
-                    filteredPresenceInfo = []
-
-                    for x in range(len(enabledPresences)):
-                        if enabledPresences[x] == presenceInfo[x].get('name'): filteredPresenceInfo.append(presenceInfo[x])
-
-                    response = json.dumps({'type': 'enabledPresences', 'message': filteredPresenceInfo})
-                    await websocket.send(response)
-                    print(f'Sent enabled presences! {response}')
+                    await sendEnabledPresences()
                 case 'clear':
                     print('Status cleared on request from extension.')
                     RPC.clear()
@@ -70,7 +79,14 @@ async def hello(websocket):
                             if newActivity.type in {'WATCHING', 'LISTENING'}:
                                 timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
 
-                    else: RPC.clear()
+                    else: 
+                        # prevents script from automatically trying to clear status if it's already cleared
+                        if newActivity is not None:
+                            match newActivity.name:
+                                case None: pass
+                                case _:
+                                    newActivity.name = None
+                                    RPC.clear()                    
                 case 'checkRPC':
                     print('\nCheckRPC message received.')
                     response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
@@ -90,9 +106,8 @@ async def hello(websocket):
                     response = json.dumps({'type': 'received', 'message': 'OK'})
                     await websocket.send(response)
                     print(f'Received: {msgDict}')
-      
-    except websockets.exceptions.ConnectionClosedOK:
-        pass
+    except websockets.exceptions.ConnectionClosedOK: pass
+    finally: connectedClients.remove(websocket)
 
 def createActivity(tabs):
     presencePriority = app.storage.general['presencePriority']
@@ -184,7 +199,7 @@ async def home():
     enabledPresences = app.storage.general['enabledPresences']
     print("enabledPresences:", enabledPresences)
 
-    def handleCheck(presence: str, add: bool):
+    async def handleCheck(presence: str, add: bool):
         enabledPresences = app.storage.general['enabledPresences']
         
         if add is True and presence not in enabledPresences:
@@ -192,6 +207,10 @@ async def home():
             
         elif add is False and presence in enabledPresences:
             enabledPresences.remove(presence)
+        
+        app.storage.general['enabledPresences'] = enabledPresences
+        
+        await sendEnabledPresences()
 
     with ui.list().classes('self-center w-full') as defaultPresences:
         for presence in presencePriority:
@@ -217,11 +236,11 @@ async def onStartup():
         app.storage.general['enabledPresences'] = ['YouTube', 'SoundCloud', 'Miruro']
     
     if app.storage.general.get('presenceInfo') is None:
-        app.storage.general['presenceInfo'] = [
-            {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'}, 
-            {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
-            {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'}
-        ]
+        app.storage.general['presenceInfo'] = {
+            'YouTube': {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'},
+            'SoundCloud': {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
+            'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'}
+        }
     
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
         background_tasks.create(startWebsocket())

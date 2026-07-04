@@ -1,7 +1,7 @@
 [project]
 name = "livepresence"
 version = "0.1.0"
-description = "Add your description here"
+description = "Discord RPC for the web!"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
