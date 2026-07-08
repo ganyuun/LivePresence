@@ -9,8 +9,6 @@ async def sendEnabledPresences():
     enabledPresences = app.storage.general['enabledPresences']
     presenceInfo = app.storage.general['presenceInfo']
 
-    print('Enabled presences and presenceInfo in function:', enabledPresences, presenceInfo)
-
     filteredPresenceInfo = []
 
     for site in enabledPresences:
@@ -229,19 +227,37 @@ async def home():
 
 @app.on_startup
 async def onStartup():
+    # presencePriority needs to be updated whenever new supported sites are added
     if app.storage.general.get('presencePriority') is None: 
-        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud', 'Miruro']
+        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch']
+    else:
+        prioritySet = set(app.storage.general['presencePriority'])
+        infoSet = set(app.storage.general['presenceInfo'].keys())
+
+        if prioritySet != infoSet: app.storage.general['presencePriority'].extend( infoSet - prioritySet )
 
     if app.storage.general.get('enabledPresences') is None:
         app.storage.general['enabledPresences'] = ['YouTube', 'SoundCloud', 'Miruro']
+
+    presenceInfo = app.storage.general.get('presenceInfo')
     
-    if app.storage.general.get('presenceInfo') is None:
+    if presenceInfo is None:
         app.storage.general['presenceInfo'] = {
             'YouTube': {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'},
             'SoundCloud': {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
-            'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'}
+            'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'},
+            'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},
+            'Twitch': {'name': 'Twitch', 'hostName': 'twitch.tv', 'type': 'stream'}
         }
-    
+    else:
+        if set(presenceInfo.keys()) != {'YouTube', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch'}:
+            app.storage.general['presenceInfo'] = {
+            'YouTube': {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'},
+            'SoundCloud': {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
+            'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'},
+            'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},
+            'Twitch': {'name': 'Twitch', 'hostName': 'twitch.tv', 'type': 'stream'}
+        }
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
         background_tasks.create(startWebsocket())
     elif kr.get_password('LivePresence', 'clientID') is None:

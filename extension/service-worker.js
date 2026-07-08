@@ -2,7 +2,6 @@ const websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
-let regex = { YouTube: new RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), SoundCloud: null, Miruro: new RegExp(), urlRegex: new RegExp("^(https://)|(www.)|(.com).*|(.tv).*", "g") };
 let debounceTimer;
 
 // to ensure that the extension runs perpetually
@@ -104,12 +103,14 @@ websocket.addEventListener("message", (event) => {
             acceptedURLs: hostNames.map( (host) => `*://*.${host}/*` ), 
             videoType: response.map( dict => {if (dict.type === 'video') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
             musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
+            streamType: response.map( dict => {if (dict.type === 'stream') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
             playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'} } )
         };
 
-        presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" )
-        presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" )
-        presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" )
+        presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" );
+        presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
+        presences.streamType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
+        presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" );
     }
 
     if (msg.type === 'tabs') {
@@ -128,42 +129,6 @@ const getTabInfo = (tabId, infoType) => {
 
     switch (infoType) {
         case 'video':
-            return new Promise((resolve) => {
-                const check = async () => {
-                    const [{result: result1}] = await chrome.scripting.executeScript({
-                        target: { tabId: tabId },
-                        func: () => document.querySelector('video')?.currentTime
-                    });
-                    
-                    const [{result: result2}] = await chrome.scripting.executeScript({
-                                target: { tabId: tabId },
-                                func: () => document.querySelector('video')?.duration
-                            });
-
-                    let vidCurrentTime = result1;
-                    let vidDuration = result2;
-
-                    if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
-                    else { setTimeout(check, interval); }
-                };
-                check();
-            });
-        case 'miruroThumbnail':
-            return new Promise((resolve) => {
-                const check = async () => {
-                    const [{result}] = await chrome.scripting.executeScript({
-                        target: { tabId: tabId },
-                        func: () => document.querySelector('._coverImg_2wrhc_89').src
-                    });
-
-                    let thumbnail = result;
-
-                    if (result) { resolve(thumbnail); }
-                    else { setTimeout(check, interval); }
-                };
-                check();
-            });
-        case 'videoActivityListeners':
             function videoActivityListeners() {
                 const video = document.querySelector('video')
 
@@ -203,6 +168,42 @@ const getTabInfo = (tabId, infoType) => {
             }
 
             chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
+
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result: result1}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('video')?.currentTime
+                    });
+                    
+                    const [{result: result2}] = await chrome.scripting.executeScript({
+                                target: { tabId: tabId },
+                                func: () => document.querySelector('video')?.duration
+                            });
+
+                    let vidCurrentTime = result1;
+                    let vidDuration = result2;
+
+                    if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
+        case 'miruroThumbnail':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('._coverImg_2wrhc_89').src
+                    });
+
+                    let thumbnail = result;
+
+                    if (result) { resolve(thumbnail); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
         case 'soundcloud':
             function soundcloudListener() {
                     const progressBar = document.querySelector('.playbackTimeline__progressWrapper')
@@ -262,17 +263,16 @@ const getTabInfo = (tabId, infoType) => {
 }
 
 async function activityFormatting(tab, duplicateStatus) {
-    let tabName = tab.url.replace(regex.urlRegex, "");
+    let tabName = tab.url.replace( RegExp("^(https://)|(www.)|(.com).*|(.tv).*", "g") , "");
     let activityType;
 
     // tab.audible condition excludes video tabs that are paused, same effect as tab.active but not as strict
     if ( presences.videoType.includes(tabName) && tab.audible ) {
         activityType = 'WATCHING';
-        
-        const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
-        getTabInfo(tab.id, 'videoActivityListeners');
 
-        if (tab.url.includes("youtube.com/watch")) {
+        const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
+
+        if ( tab.url.includes("youtube.com/watch") ) {
             return {
                 'tabId': tab.id, 
                 'name': 'YouTube', 
@@ -283,23 +283,24 @@ async function activityFormatting(tab, duplicateStatus) {
                 'currentTime': vidCurrentTime, 
                 'duration': vidDuration,
                 'timeSent': Date.now(),
-                'duplicates': duplicateStatus };
-        
-            if (tab.url.includes("miruro.tv/watch")) {
-                let thumbnail = await getTabInfo(tab.id, 'miruroThumbnail');
+                'duplicates': duplicateStatus
+            };
+        }
+        else if (tab.url.includes("miruro.tv/watch")) {
+            let thumbnail = await getTabInfo(tab.id, 'miruroThumbnail');
 
-                return {
-                    'tabId': tab.id, 
-                    'name': 'Miruro', 
-                    'details': (tab.title).replace(RegExp(".*(Watch\\s)|(\\s·\\sMiruro)", "g"), ''), 
-                    'url': tab.url,
-                    'activityType': activityType, 
-                    'thumbnail': thumbnail,
-                    'currentTime': vidCurrentTime, 
-                    'duration': vidDuration, 
-                    'timeSent': Date.now(),
-                    'duplicates': duplicateStatus };
-            }
+            return {
+                'tabId': tab.id, 
+                'name': 'Miruro', 
+                'details': (tab.title).replace(RegExp(".*(Watch\\s)|(\\s·\\sMiruro)", "g"), ''), 
+                'url': tab.url,
+                'activityType': activityType, 
+                'thumbnail': thumbnail,
+                'currentTime': vidCurrentTime, 
+                'duration': vidDuration, 
+                'timeSent': Date.now(),
+                'duplicates': duplicateStatus 
+            };
         }
         else { return undefined; }
     }
@@ -329,15 +330,17 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
+    // else if ( presences.streamType.includes(tabName) && tab.audible ) {} (will implement this later)
     else if ( presences.playingType.includes(tabName) ) {
         activityType = 'PLAYING';
 
         return {
-        'tabId': tab.id, 
-        'name': tab.title, 
-        'url': tab.url, 
-        'activityType': activityType,
-        'duplicates': duplicateStatus};
+            'tabId': tab.id, 
+            'name': tab.title, 
+            'url': tab.url, 
+            'activityType': activityType,
+            'duplicates': duplicateStatus
+        };
     }
     else { return undefined; }
 }
