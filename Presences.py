@@ -3,18 +3,18 @@ from discordrpc import Activity, StatusDisplay, utils, RPCException
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# discord-rpc docs: https://senophyx.id/docs/discord-rpc/
+# discord-rpc docs: https://github.com/Senophyx/Discord-RPC/blob/main/DOCS.md
 # discord docs: https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence#understanding-rich-presence
 
 @dataclass
 class Presence:
     name: str # displayed as the first line on member list
     type: str # accepts only 'PLAYING', 'WATCHING', or 'LISTENING'
-    details: str # displayed when you click on the status
+    details: str # line 2 of activity
     timeSent: float
+    state: str = None # line 3 of activity
 
     activityType: Activity = field(init = False)
-    statusDisplayType: StatusDisplay = field(init = False, default = StatusDisplay.State)
 
     def __post_init__(self):
         if self.type not in {'PLAYING', 'WATCHING', 'LISTENING'}: raise ValueError(f'Invalid activity type: {self.type}')
@@ -27,10 +27,10 @@ class Presence:
     def setPresence(self, RPC: discordrpc.RPC):
         try:
             RPC.set_activity(
-                state = self.name,
+                name = self.name,
                 details = self.details,
                 act_type = self.activityType,
-                status_type = self.statusDisplayType
+                state = self.state
             )
         except RPCException as e:
             print(f'Error when trying to set status: {e}')
@@ -49,12 +49,12 @@ class VideoPresence(Presence):
     def setPresence(self, RPC: discordrpc.RPC):
         try:
             RPC.set_activity(
-                state = self.name,
+                name = self.name,
                 details = self.details,
+                state = self.state,
                 act_type = self.activityType,
-                **utils.ProgressBar(self.currentTime, self.duration),
+                **utils.progress_bar(self.currentTime, self.duration),
                 large_image = self.thumbnail,
-                status_type = self.statusDisplayType,
                 details_url = self.state_url
             )
         except RPCException as e:

@@ -199,17 +199,43 @@ const getTabInfo = (tabId, infoType) => {
                 };
                 check();
             });
-        case 'miruroThumbnail':
+        case 'youtube':
             return new Promise((resolve) => {
                 const check = async () => {
                     const [{result}] = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
-                        func: () => document.querySelector('._coverImg_2wrhc_89').src
+                        func: () => document.querySelector('a.yt-simple-endpoint.style-scope.yt-formatted-string')?.src
                     });
 
-                    let thumbnail = result;
+                    let author = result;
 
-                    if (result) { resolve(thumbnail); }
+                    if (author) { resolve(author); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });  
+        case 'miruro':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    let result1 = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        func: () => document.querySelector('._coverImg_2wrhc_89')?.src
+                    });
+
+                    let result2 = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        func: () => document.querySelector('.ep-number')?.textContent
+                    });
+
+                    result1 = result1.map(thumbnail => thumbnail.result)
+                    result2 = result2.map(epNumber => epNumber.result)
+
+                    let thumbnail = result1.find((thumbnail) => thumbnail != null);
+                    let epNumber = result2.find((epNumber) => epNumber != null).replace( RegExp("\\..*", "g"), "" );
+
+                    console.log(thumbnail, epNumber);
+
+                    if (thumbnail != undefined && epNumber != undefined) { resolve([thumbnail, epNumber]); }
                     else { setTimeout(check, interval); }
                 };
                 check();
@@ -251,17 +277,23 @@ const getTabInfo = (tabId, infoType) => {
                                 target: { tabId: tabId },
                                 func: () => document.querySelector('a.playbackSoundBadge__avatar')?.href
                             });
+                    
+                    const [{result: result5}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('a.playbackSoundBadge__lightLink')?.textContent
+                    });
 
                     try {
                         let songCurrentTime = result1.split(':').map(Number);
                         let songDuration = result2.split(':').map(Number);
                         let thumbnail = result3.split('"')[1];
                         let url = result4.replace(RegExp("(\\?).*", "g"), "");
+                        let author = result5
 
                         songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
                         songDuration = (songDuration[0] * 60) + songDuration[1];
 
-                        if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url]); }
+                        if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url, author]); }
                         else { setTimeout(check, interval); }
                     } catch (error) {
                         if (!error instanceof TypeError) { console.log('Error in getting SoundCloud information.') }
@@ -283,10 +315,13 @@ async function activityFormatting(tab, duplicateStatus) {
         const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
 
         if ( tab.url.includes("youtube.com/watch") ) {
+            const author = await getTabInfo(tab.id, 'youtube');
+
             return {
                 'tabId': tab.id, 
                 'name': 'YouTube', 
                 'details': (tab.title).replace(RegExp("^(\\(\\d+\\)\\s)|(\\s-\\sYouTube$)|(\\u200b)", "g"), ''), 
+                'state': author,
                 'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
                 'activityType': activityType, 
                 'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
@@ -297,12 +332,13 @@ async function activityFormatting(tab, duplicateStatus) {
             };
         }
         else if (tab.url.includes("miruro.tv/watch")) {
-            let thumbnail = await getTabInfo(tab.id, 'miruroThumbnail');
+            const [thumbnail, epNumber] = await getTabInfo(tab.id, 'miruro');
 
             return {
                 'tabId': tab.id, 
                 'name': 'Miruro', 
                 'details': (tab.title).replace(RegExp(".*(Watch\\s)|(\\s·\\sMiruro)", "g"), ''), 
+                'state': `Episode ${epNumber}`,
                 'url': tab.url,
                 'activityType': activityType, 
                 'thumbnail': thumbnail,
@@ -320,7 +356,7 @@ async function activityFormatting(tab, duplicateStatus) {
 
         // soundcloud tabs are usually "{song title} by {artist}" if not in a playlist, or "{song title} in {playlist name}"
         if (tab.url.includes("soundcloud.com") && ( tab.title.includes(' by ') || tab.title.includes(' in ') )) {
-            const [musicCurrentTime, musicDuration, thumbnail, url] = await getTabInfo(tab.id, 'soundcloud')
+            const [musicCurrentTime, musicDuration, thumbnail, url, author] = await getTabInfo(tab.id, 'soundcloud')
 
             if (tab.title.includes(' by ')) { details = tab.title.replace(RegExp("\\s(?!.*\\sby\\s).*", "g"), "") }
             else if (tab.title.includes(' in ')) { details = tab.title.replace(RegExp("\\s(?!.*\\sin\\s).*", "g"), "") }
@@ -329,6 +365,7 @@ async function activityFormatting(tab, duplicateStatus) {
                 'tabId': tab.id,
                 'name': 'SoundCloud',
                 'details': details,
+                'state': author,
                 'url': url,
                 'activityType': activityType,
                 'thumbnail': thumbnail,

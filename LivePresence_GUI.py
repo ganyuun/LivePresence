@@ -166,6 +166,7 @@ def createActivity(tabs):
                         name = highPriority.get('name'), 
                         type = highPriority.get('activityType'),
                         details = highPriority.get('details'), 
+                        state = highPriority.get('state'),
                         currentTime = highPriority.get('currentTime'),
                         duration = highPriority.get('duration'),
                         thumbnail = highPriority.get('thumbnail', ''),
@@ -177,6 +178,7 @@ def createActivity(tabs):
                         name = highPriority.get('name'), 
                         type = highPriority.get('activityType'),
                         details = highPriority.get('details'), 
+                        state = highPriority.get('state'),
                         currentTime = highPriority.get('currentTime'),
                         duration = highPriority.get('duration'),
                         thumbnail = highPriority.get('thumbnail', ''),
@@ -188,6 +190,7 @@ def createActivity(tabs):
                         name = highPriority.get('name'),
                         type = highPriority.get('activityType'),
                         details = highPriority.get('details'), 
+                        state = highPriority.get('state'),
                         timeSent = highPriority.get('timeSent')
                     )
         except ValueError:
