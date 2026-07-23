@@ -1,9 +1,41 @@
-import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc
+import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc, pystray
 from nicegui import app, ui, background_tasks
 from Presences import Presence, VideoPresence, MusicPresence
+from PIL import Image
 
+RPC = None
+icon = None # for system tray icon
+rpcActive = False # default value, updated on startup
+shutdownEvent = asyncio.Event()
 serverStarted = False
 connectedClients = set()
+
+def getRpcStatus():
+    global rpcActive
+    return rpcActive
+
+def updateRpcActive(icon, item):
+    global rpcActive
+    rpcActive = not item.checked
+
+async def createIcon(shutdownEvent: asyncio.Event):
+    global icon
+
+    def exit():
+        shutdownEvent.set()
+
+    favicon = Image.open('favicon.ico')
+    
+    if pystray.Icon.HAS_MENU:
+        menu = pystray.Menu(
+            pystray.MenuItem('RPC Active', updateRpcActive, checked = lambda item: rpcActive), 
+            pystray.MenuItem('Clear Status', clearActivity),
+            pystray.MenuItem('Exit', exit)
+        )
+    else: menu = None
+
+    icon = pystray.Icon('LivePresence', icon = favicon, menu = menu)
+    icon.run_detached()
 
 async def sendEnabledPresences():
     enabledPresences = app.storage.general['enabledPresences']
@@ -31,6 +63,8 @@ async def startWebsocket():
     print("Websocket started")
 
 async def hello(websocket):
+    global RPC
+
     connectedClients.add(websocket)
 
     RPC = discordrpc.RPC(app_id = clientID)
@@ -61,30 +95,31 @@ async def hello(websocket):
 
                     if timePollingTask is not None: timePollingTask.cancel()
                 case 'tabs':
-                    if len(msgMessage) > 0:
-                        # this check is mainly for video activities. duplicates = True when looping a video
-                        # duplicates = False when the user navigated to a new video while the current one was playing
-                        if msgMessage[0].get('duplicates') is False and timePollingTask is not None: timePollingTask.cancel() 
+                    if getRpcStatus(): # from the system tray
+                        if len(msgMessage) > 0:
+                            # this check is mainly for video activities. duplicates = True when looping a video
+                            # duplicates = False when the user navigated to a new video while the current one was playing
+                            if msgMessage[0].get('duplicates') is False and timePollingTask is not None: timePollingTask.cancel() 
 
-                        newActivity = createActivity(msgMessage)
+                            newActivity = createActivity(msgMessage)
 
-                        if newActivity is None:
-                            response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
-                            await websocket.send(response)
-                        else:
-                            newActivity.setPresence(RPC)
+                            if newActivity is None:
+                                response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                                await websocket.send(response)
+                            else:
+                                newActivity.setPresence(RPC)
 
-                            if newActivity.type in {'WATCHING', 'LISTENING'}:
-                                timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
+                                if newActivity.type in {'WATCHING', 'LISTENING'}:
+                                    timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
 
-                    else: 
-                        # prevents script from automatically trying to clear status if it's already cleared
-                        if newActivity is not None:
-                            match newActivity.name:
-                                case None: pass
-                                case _:
-                                    newActivity.name = None
-                                    RPC.clear()                    
+                        else: 
+                            # prevents script from automatically trying to clear status if it's already cleared
+                            if newActivity is not None:
+                                match newActivity.name:
+                                    case None: pass
+                                    case _:
+                                        newActivity.name = None
+                                        RPC.clear()                    
                 case 'checkRPC':
                     print('\nCheckRPC message received.')
                     response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
@@ -100,6 +135,9 @@ async def hello(websocket):
                     else:
                         response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
                         await websocket.send(response)
+                case 'exit':
+                    print('NiceGUI shutting down.')
+                    app.shutdown()
                 case _:
                     response = json.dumps({'type': 'received', 'message': 'OK'})
                     await websocket.send(response)
@@ -158,6 +196,10 @@ def createActivity(tabs):
     
         return activity
 
+def clearActivity():
+    if RPC is not None:
+        RPC.clear()
+
 async def setup():
     container = ui.row()
 
@@ -209,14 +251,20 @@ async def home():
         app.storage.general['enabledPresences'] = enabledPresences
         
         await sendEnabledPresences()
+    
+    def handleSwitch(switch: str, toggle: bool):
+        app.storage.general['settings'][switch] = toggle
 
-    with ui.list().classes('self-center w-full') as defaultPresences:
-        for presence in presencePriority:
-            with ui.item().classes('flex items-center justify-center w-full text-center py-2 my-4 h-12 rounded-md bg-blue-500 hover:bg-sky-700 cursor-grab active:cursor-grabbing'):
-                ui.item_label(presence).classes('flex items-center justify-center')
-                
-                if presence in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
-                else: ui.checkbox(value = False, on_change = lambda e, presence = presence: handleCheck(presence, e.value))
+    with ui.expansion('Presences', value = True).classes('self-center w-full'):
+        with ui.list().classes('self-center w-full') as defaultPresences:
+            for presence in presencePriority:
+                with ui.item().classes('flex items-center justify-center w-full text-center py-2 my-4 h-12 rounded-md bg-blue-500 hover:bg-sky-700 cursor-grab active:cursor-grabbing'):
+                    ui.item_label(presence).classes('flex items-center justify-center')
+                    
+                    if presence in enabledPresences: ui.checkbox(value = True,  on_change = lambda e, presence = presence: handleCheck(presence, e.value))
+                    else: ui.checkbox(value = False, on_change = lambda e, presence = presence: handleCheck(presence, e.value))
+    with ui.expansion('Settings').classes('self-center w-full'):
+        s1 = ui.switch('RPC Broadcast Enabled on Startup', value = app.storage.general.get('settings').get('rpc status'), on_change = lambda: handleSwitch('rpc status', s1.value))
 
     def presencesOnSort():
         order = [descendant.text for descendant in defaultPresences.descendants() if isinstance(descendant, ui.item_label)]
@@ -227,6 +275,8 @@ async def home():
 
 @app.on_startup
 async def onStartup():
+    global rpcActive
+
     # presencePriority needs to be updated whenever new supported sites are added
     if app.storage.general.get('presencePriority') is None: 
         app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch']
@@ -238,7 +288,27 @@ async def onStartup():
 
     if app.storage.general.get('enabledPresences') is None:
         app.storage.general['enabledPresences'] = ['YouTube', 'SoundCloud', 'Miruro']
+    
+    if app.storage.general.get('settings') is None:
+        app.storage.general['settings'] = {
+            'rpc status': False
+        }
+    else:
+        # this check is unnecessary for now, but is here in case additional settings are added in future updates
+        currentSettings = app.storage.general.get('settings')
+        updatedSettings = {'rpc status': False}
 
+        if len(updatedSettings.keys()) > len(currentSettings.keys()):
+            currentKeys = currentSettings.keys()
+
+            for key in updatedSettings:
+                if key not in currentKeys:
+                    currentSettings[key] = updatedSettings[key]
+            
+            app.storage.general['settings'] = currentSettings
+
+    rpcActive = app.storage.general.get('settings', False).get('rpc status', False)
+    
     presenceInfo = app.storage.general.get('presenceInfo')
     
     if presenceInfo is None:
@@ -258,8 +328,15 @@ async def onStartup():
             'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},
             'Twitch': {'name': 'Twitch', 'hostName': 'twitch.tv', 'type': 'stream'}
         }
+    
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
         background_tasks.create(startWebsocket())
+        
+        background_tasks.create(createIcon(shutdownEvent))
+
+        await shutdownEvent.wait()
+        
+        app.shutdown()
     elif kr.get_password('LivePresence', 'clientID') is None:
         print('Not starting Websocket, clientID not found.')
         await setup()
@@ -279,4 +356,5 @@ if __name__ == "__main__":
     
     if clientID is None:
         ui.run(dark = True, reload = False, storage_secret = storageSecret)
-    else: ui.run(dark = True, reload = False, storage_secret = storageSecret, show = False)
+    else: 
+        ui.run(dark = True, reload = False, storage_secret = storageSecret, show = False)

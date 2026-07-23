@@ -10,5 +10,6 @@ dependencies = [
     "discord-rpc>=5.5",
     "keyring>=25.7.0",
     "nicegui>=3.12.1",
+    "pystray>=0.19.5",
     "websockets>=16.0",
 ]

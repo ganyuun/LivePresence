@@ -1,22 +1,25 @@
-const websocket = new WebSocket("ws://localhost:8765/");
+let websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
 let debounceTimer;
 
-// to ensure that the extension runs perpetually
-setInterval( function() { websocket.send(JSON.stringify({type: "hello", message: "keep alive"})); }, 20000 )
+connectWebSocket(websocket);
 
 function connectWebSocket(websocket) {
     return new Promise((resolve, reject) => {
         websocket.onopen = () => {
-            console.log("Connected to WebSocket successfully!")
+            resolve("Connected to WebSocket successfully!");
+            addListeners(websocket);
 
             websocket.send(JSON.stringify({type: "hello", message: "ping"}));
-
             websocket.send(JSON.stringify({type: "enabledPresences"}));
 
-            addChromeListeners();
+            const keepAliveId = setInterval( () => { 
+                if (websocket.readyState === WebSocket.OPEN) {
+                    websocket.send(JSON.stringify({type: "hello", message: "keep alive"})); 
+                }
+            }, 20000 );
         };
 
         websocket.onerror = (error) => {
@@ -26,7 +29,7 @@ function connectWebSocket(websocket) {
     });
 }
 
-function addChromeListeners() {
+function addListeners(websocket) {
     chrome.tabs.onUpdated.addListener(() => {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(async () => { 
@@ -53,7 +56,48 @@ function addChromeListeners() {
             }
             else { console.log("tabList unchanged."); }
         }
-    })
+    });
+
+    websocket.addEventListener("message", (event) => {
+        const msg = JSON.parse(event.data)
+
+        if (msg.type === "hello") {
+            if ( !msg.message.includes('silent') ) { console.log("Received hello:", msg); }
+        }
+
+        if (msg.type === "enabledPresences") {
+            const response = msg.message
+            const hostNames = response.map( (dict) => dict.hostName );
+
+            presences = {
+                acceptedURLs: hostNames.map( (host) => `*://*.${host}/*` ), 
+                videoType: response.map( dict => {if (dict.type === 'video') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
+                musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
+                streamType: response.map( dict => {if (dict.type === 'stream') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
+                playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'} } )
+            };
+
+            presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" );
+            presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
+            presences.streamType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
+            presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" );
+        }
+
+        if (msg.type === 'tabs') {
+            clearTimeout(debounceTimer);
+
+            debounceTimer = setTimeout(async () => { 
+                const tabs = await getTabs(true);
+                console.log("Tabs sent (duplicates = true):", tabs);
+                websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
+            }, 1000);
+        }
+
+        if (msg.type === 'exit') {
+            console.log('System tray icon exiting.')
+            websocket.send( JSON.stringify({type: "exit", message: "exit"}) )
+        }
+    });
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -88,42 +132,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 });
 
-websocket.addEventListener("message", (event) => {
-    const msg = JSON.parse(event.data)
-
-    if (msg.type === "hello") {
-        if ( !msg.message.includes('silent') ) { console.log("Received hello:", msg); }
-    }
-
-    if (msg.type === "enabledPresences") {
-        const response = msg.message
-        const hostNames = response.map( (dict) => dict.hostName );
-
-        presences = {
-            acceptedURLs: hostNames.map( (host) => `*://*.${host}/*` ), 
-            videoType: response.map( dict => {if (dict.type === 'video') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
-            musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
-            streamType: response.map( dict => {if (dict.type === 'stream') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
-            playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'} } )
-        };
-
-        presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" );
-        presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
-        presences.streamType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
-        presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" );
-    }
-
-    if (msg.type === 'tabs') {
-        clearTimeout(debounceTimer);
-
-        debounceTimer = setTimeout(async () => { 
-            const tabs = await getTabs(true);
-            console.log("Tabs sent (duplicates = true):", tabs);
-            websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
-        }, 1000);
-    }
-});
-
 const getTabInfo = (tabId, infoType) => {
     let interval = 1000;
 
@@ -144,7 +152,6 @@ const getTabInfo = (tabId, infoType) => {
                             return;
                         }
 
-                        console.log('Video resumed.');
                         chrome.runtime.sendMessage({recipient: "service-worker", request: "checkRPC"});
                     }
                     
@@ -155,36 +162,39 @@ const getTabInfo = (tabId, infoType) => {
                             return;
                         }
 
-                        console.log('Video paused.');
                         chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
                     }
 
                     video.onseeked = (event) => {
-                        console.log('Seeked to', video.currentTime);
                         chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime});
                     }
                     
                 }
             }
 
-            chrome.scripting.executeScript({ target: {tabId: tabId}, func: videoActivityListeners });
+            chrome.scripting.executeScript({ target: {tabId: tabId, allFrames: true}, func: videoActivityListeners });
 
             return new Promise((resolve) => {
                 const check = async () => {
-                    const [{result: result1}] = await chrome.scripting.executeScript({
-                        target: { tabId: tabId },
+                    let result1 = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
                         func: () => document.querySelector('video')?.currentTime
                     });
                     
-                    const [{result: result2}] = await chrome.scripting.executeScript({
-                                target: { tabId: tabId },
-                                func: () => document.querySelector('video')?.duration
-                            });
+                    let result2 = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        func: () => document.querySelector('video')?.duration
+                    });
+                    
+                    // result1 is a list of dictionaries, but only the result key is needed
+                    result1 = result1.map(currentTime => currentTime.result)
+                    result2 = result2.map(duration => duration.result)
 
-                    let vidCurrentTime = result1;
-                    let vidDuration = result2;
+                    let vidCurrentTime = result1.find((time) => time != null);
+                    let vidDuration = result2.find((duration) => duration != null);
 
-                    if (typeof vidDuration != null && typeof vidCurrentTime != null) { resolve([vidCurrentTime, vidDuration]); }
+                    // if the duration and time has been found, send it back to activityFormatting(), otherwise start again
+                    if (vidDuration != undefined && vidCurrentTime != undefined) { resolve([vidCurrentTime, vidDuration]); }
                     else { setTimeout(check, interval); }
                 };
                 check();
@@ -382,5 +392,3 @@ async function getTabs(duplicates = false) {
         return [];
     }
 }
-
-connectWebSocket(websocket)
