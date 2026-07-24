@@ -6,7 +6,6 @@ from PIL import Image
 RPC = None
 icon = None # for system tray icon
 rpcActive = False # default value, updated on startup
-shutdownEvent = asyncio.Event()
 serverStarted = False
 connectedClients = set()
 
@@ -18,11 +17,12 @@ def updateRpcActive(icon, item):
     global rpcActive
     rpcActive = not item.checked
 
-async def createIcon(shutdownEvent: asyncio.Event):
+async def createIcon():
     global icon
 
     def exit():
-        shutdownEvent.set()
+        icon.stop()
+        app.shutdown()
 
     favicon = Image.open('favicon.ico')
     
@@ -334,12 +334,7 @@ async def onStartup():
     
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
         background_tasks.create(startWebsocket())
-        
-        background_tasks.create(createIcon(shutdownEvent))
-
-        await shutdownEvent.wait()
-        
-        app.shutdown()
+        background_tasks.create(createIcon())
     elif kr.get_password('LivePresence', 'clientID') is None:
         print('Not starting Websocket, clientID not found.')
         await setup()
