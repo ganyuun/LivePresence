@@ -217,25 +217,16 @@ const getTabInfo = (tabId, infoType) => {
         case 'miruro':
             return new Promise((resolve) => {
                 const check = async () => {
-                    let result1 = await chrome.scripting.executeScript({
+                    let result = await chrome.scripting.executeScript({
                         target: { tabId: tabId, allFrames: true },
                         func: () => document.querySelector('._coverImg_2wrhc_89')?.src
                     });
 
-                    let result2 = await chrome.scripting.executeScript({
-                        target: { tabId: tabId, allFrames: true },
-                        func: () => document.querySelector('.ep-number')?.textContent
-                    });
+                    result = result.map(thumbnail => thumbnail.result)
 
-                    result1 = result1.map(thumbnail => thumbnail.result)
-                    result2 = result2.map(epNumber => epNumber.result)
+                    let thumbnail = result.find((thumbnail) => thumbnail != null);
 
-                    let thumbnail = result1.find((thumbnail) => thumbnail != null);
-                    let epNumber = result2.find((epNumber) => epNumber != null).replace( RegExp("\\..*", "g"), "" );
-
-                    console.log(thumbnail, epNumber);
-
-                    if (thumbnail != undefined && epNumber != undefined) { resolve([thumbnail, epNumber]); }
+                    if (thumbnail) { resolve(thumbnail); }
                     else { setTimeout(check, interval); }
                 };
                 check();
@@ -332,7 +323,8 @@ async function activityFormatting(tab, duplicateStatus) {
             };
         }
         else if (tab.url.includes("miruro.tv/watch")) {
-            const [thumbnail, epNumber] = await getTabInfo(tab.id, 'miruro');
+            const thumbnail = await getTabInfo(tab.id, 'miruro');
+            const epNumber = tab.url.replace( RegExp('.*ep=', 'g'), "" );
 
             return {
                 'tabId': tab.id, 
