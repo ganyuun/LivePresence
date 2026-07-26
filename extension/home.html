@@ -5,14 +5,19 @@
     </head>
 
     <body>
-        <h1>LivePresence</h1>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="icons/icon48.png">
+            <h1>LivePresence</h1>
+        </div>
 
         <hr>
 
-        <button type="button" id="uiBtn" disabled>Open UI</button>
-        <button type="button" id="clear" disabled>Clear Activity</button>
+        <div style="display: flex; justify-content: center; gap: 5px;">
+            <button type="button" id="uiBtn" disabled>Open UI</button>
+            <button type="button" id="clear" disabled>Clear Activity</button>
+        </div>
 
-        <p id="currentStatus">Websocket not connected!</p>
+        <p style="text-align: center;"><em id="currentStatus">Websocket not connected!</em></p>
         <script src="popup.js" type="module"></script>
     </body>
 </html>
