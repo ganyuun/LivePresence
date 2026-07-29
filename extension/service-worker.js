@@ -393,7 +393,6 @@ async function getTabs(duplicates = false) {
         if (tabs.length > 0) {
             for (const tab of tabs) {
                 let activity = await activityFormatting(tab, duplicates);
-
                 if (activity != null) { tabList.push(activity) }
             }
         }
@@ -403,18 +402,19 @@ async function getTabs(duplicates = false) {
             return tabList;
         }
         else {
+            // compare the previously sent activities to the current
+            // if they're the same (or their length are both 0), it won't be sent through the websocket
             const newDetails = tabList.map( (dict) => `${dict.details} ${dict.state}` );
             let lastDetails = [];
 
             if (lastMessage.length > 0) { lastDetails = lastMessage.map( (dict) => `${dict.details} ${dict.state}` ); }
             
-            if (lastMessage.length === 0 || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
+            if (JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
                 lastMessage = tabList;
                 return tabList;
             }
-            else { 
-                return "duplicate";
-            }
+            else if (newDetails.length === 0 && lastDetails.length === 0) { return 'duplicate'; }
+            else { return 'duplicate'; }
         }
     } catch (error) { 
         console.error("Error fetching tabs", error);
