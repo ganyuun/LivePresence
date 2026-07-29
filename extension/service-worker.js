@@ -101,8 +101,6 @@ function addListeners(websocket) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    console.log("Service worker received message from", sender.id, ":", msg);
-
     switch (msg.request) {
         case 'ping':
             try {
@@ -376,6 +374,8 @@ async function activityFormatting(tab, duplicateStatus) {
         return {
             'tabId': tab.id, 
             'name': tab.title, 
+            'details': '',
+            'state': '',
             'url': tab.url, 
             'activityType': activityType,
             'duplicates': duplicateStatus
@@ -403,10 +403,10 @@ async function getTabs(duplicates = false) {
             return tabList;
         }
         else {
-            const newDetails = tabList.map( (dict) => dict.details );
+            const newDetails = tabList.map( (dict) => `${dict.details} ${dict.state}` );
             let lastDetails = [];
 
-            if (lastMessage.length > 0) { lastDetails = lastMessage.map( (dict) => dict.details ); }
+            if (lastMessage.length > 0) { lastDetails = lastMessage.map( (dict) => `${dict.details} ${dict.state}` ); }
             
             if (lastMessage.length === 0 || JSON.stringify(newDetails) !== JSON.stringify(lastDetails)) {
                 lastMessage = tabList;
