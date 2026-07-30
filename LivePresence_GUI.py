@@ -20,6 +20,10 @@ def updateRpcActive(icon, item):
 async def createIcon():
     global icon
 
+    def openDashboard():
+        import webbrowser
+        webbrowser.open('http://localhost:8080')
+
     def exit():
         icon.stop()
         app.shutdown()
@@ -28,6 +32,7 @@ async def createIcon():
     
     if pystray.Icon.HAS_MENU:
         menu = pystray.Menu(
+            pystray.MenuItem('Open Dashboard', openDashboard),
             pystray.MenuItem('RPC Active', updateRpcActive, checked = lambda item: rpcActive), 
             pystray.MenuItem('Clear Status', clearActivity),
             pystray.MenuItem('Exit', exit)
@@ -67,7 +72,7 @@ async def hello(websocket):
 
     connectedClients.add(websocket)
 
-    RPC = discordrpc.RPC(app_id = clientID)
+    RPC = discordrpc.RPC(app_id = clientID, exit_if_discord_close = False)
 
     # temporary, will be changed into a task later if a video/music activity is used
     timePollingTask = None
@@ -90,8 +95,11 @@ async def hello(websocket):
                 case 'enabledPresences':
                     await sendEnabledPresences()
                 case 'clear':
-                    print('Status cleared on request from extension.')
-                    RPC.clear()
+                    try:
+                        RPC.clear()
+                        print('Status cleared on request from extension.')
+                    except discordrpc.DiscordNotOpened:
+                        print("Status could not be cleared, Discord isn't open!")
 
                     if timePollingTask is not None: timePollingTask.cancel()
                 case 'tabs':
@@ -201,9 +209,14 @@ def createActivity(tabs):
 
 def clearActivity():
     if RPC is not None:
-        RPC.clear()
+        try:
+            RPC.clear()
+        except discordrpc.DiscordNotOpened:
+            print("Status could not be cleared, Discord is not open!")
 
 async def setup():
+    global RPC
+
     container = ui.row()
 
     async def save(clientID: str):
@@ -212,7 +225,7 @@ async def setup():
         with container: ui.notify('Saved! Now authenticating...', type = 'info')
 
         try:
-            discordrpc.RPC(app_id = inputClientID.value)
+            RPC = discordrpc.RPC(app_id = inputClientID.value, exit_if_discord_close=False)
 
             with container:
                 ui.notify('LivePresence connected to Discord successfully!', type = 'positive')

@@ -1,5 +1,5 @@
 import discordrpc, asyncio, json
-from discordrpc import Activity, StatusDisplay, utils, RPCException
+from discordrpc import Activity, utils
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -8,11 +8,11 @@ from datetime import datetime
 
 @dataclass
 class Presence:
-    name: str # displayed as the first line on member list
+    name: str # displayed in sidebar
     type: str # accepts only 'PLAYING', 'WATCHING', or 'LISTENING'
-    details: str # line 2 of activity
+    details: str # line 1 of activity
     timeSent: float
-    state: str = None # line 3 of activity
+    state: str = None # line 2 of activity
 
     activityType: Activity = field(init = False)
 
@@ -32,8 +32,10 @@ class Presence:
                 act_type = self.activityType,
                 state = self.state
             )
-        except RPCException as e:
+        except discordrpc.RPCException as e:
             print(f'Error when trying to set status: {e}')
+        except discordrpc.DiscordNotOpened:
+            print(f"Failed to set activity: Discord is not open!")
 
 @dataclass(kw_only = True)
 class VideoPresence(Presence):
@@ -57,7 +59,7 @@ class VideoPresence(Presence):
                 large_image = self.thumbnail,
                 details_url = self.state_url
             )
-        except RPCException as e:
+        except discordrpc.RPCException as e:
             print(f'Error when trying to set status: {e}')
 
     async def checkTime(self, websocket):
