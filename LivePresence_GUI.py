@@ -1,4 +1,4 @@
-import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc, pystray
+import asyncio, keyring as kr, secrets, string, websockets, json, discordrpc, pystray, logging
 from nicegui import app, ui, background_tasks
 from Presences import Presence, VideoPresence, MusicPresence
 from PIL import Image
@@ -8,6 +8,14 @@ icon = None # for system tray icon
 rpcActive = False # default value, updated on startup
 serverStarted = False
 connectedClients = set()
+
+logger = logging.getLogger(__name__)
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = '[%(asctime)s] %(levelname)s: %(message)s',
+    datefmt = '%I:%M:%S %p'
+)
 
 def getRpcStatus():
     global rpcActive
@@ -56,7 +64,7 @@ async def sendEnabledPresences():
     for websocket in connectedClients:
         await websocket.send(response)
 
-    print('Sent enabled presences!', response, '\n')
+    logger.info('Sent enabled presences! %s', response)
 
 async def startWebsocket():
     global serverStarted
@@ -65,7 +73,7 @@ async def startWebsocket():
     async with websockets.serve(hello, 'localhost', 8765) as server:
         await server.serve_forever()
     
-    print("Websocket started")
+    logger.info('Websocket started!')
 
 async def hello(websocket):
     global RPC
@@ -88,7 +96,7 @@ async def hello(websocket):
                 case 'hello':
                     if msgMessage != 'from extension popup' and msgMessage != 'keep alive': 
                         response = json.dumps({'type': 'hello', 'message': 'pong'})
-                        print(f'Sent hello! {response}')
+                        logger.info('Sent hello! %s', response)
                     else: response = json.dumps({'type': 'hello', 'message': 'pong - silent'})
                     
                     await websocket.send(response)
@@ -97,9 +105,9 @@ async def hello(websocket):
                 case 'clear':
                     try:
                         RPC.clear()
-                        print('Status cleared on request from extension.')
+                        logger.info('Status cleared on request from extension.')
                     except discordrpc.DiscordNotOpened:
-                        print("Status could not be cleared, Discord isn't open!")
+                        logger.warning("Status could not be cleared, Discord isn't open!")
 
                     if timePollingTask is not None: timePollingTask.cancel()
                 case 'tabs':
@@ -119,8 +127,7 @@ async def hello(websocket):
 
                                 if newActivity.type in {'WATCHING', 'LISTENING'}:
                                     timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
-
-                        else: 
+                        else:
                             # prevents script from automatically trying to clear status if it's already cleared
                             if newActivity is not None:
                                 match newActivity.name:
@@ -129,7 +136,7 @@ async def hello(websocket):
                                         newActivity.name = None
                                         RPC.clear()                    
                 case 'checkRPC':
-                    print('\nCheckRPC message received.')
+                    logger.info('CheckRPC message received.')
                     response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
                     await websocket.send(response)
                 case 'seeked':
@@ -144,12 +151,12 @@ async def hello(websocket):
                         response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
                         await websocket.send(response)
                 case 'exit':
-                    print('NiceGUI shutting down.')
+                    logger.info('NiceGUI shutting down.')
                     app.shutdown()
                 case _:
                     response = json.dumps({'type': 'received', 'message': 'OK'})
                     await websocket.send(response)
-                    print(f'Received: {msgDict}')
+                    logger.info('Received: %s', msgDict)
     except websockets.exceptions.ConnectionClosedOK: pass
     finally: connectedClients.remove(websocket)
 
@@ -163,7 +170,7 @@ def createActivity(tabs):
     
     highPriority = sorted(tabs, key = lambda x: x['priority'], reverse = True)[0]
 
-    print('Highest priority activity:', highPriority, '\n')
+    logger.info('Highest priority activity: %s', highPriority)
 
     if highPriority['activityType'] in {'WATCHING', 'LISTENING'} and None in { highPriority.get('currentTime'), highPriority.get('duration') }: return None
     else:
@@ -202,7 +209,7 @@ def createActivity(tabs):
                         timeSent = highPriority.get('timeSent')
                     )
         except ValueError:
-            print('Invalid Activity Type provided by extension.')
+            logger.warning('Invalid Activity Type provided by extension.')
             raise
     
         return activity
@@ -212,7 +219,7 @@ def clearActivity():
         try:
             RPC.clear()
         except discordrpc.DiscordNotOpened:
-            print("Status could not be cleared, Discord is not open!")
+            logger.warning("Status could not be cleared, Discord isn't open!")
 
 async def setup():
     global RPC
@@ -253,7 +260,6 @@ async def setup():
 async def home():
     presencePriority = app.storage.general['presencePriority']
     enabledPresences = app.storage.general['enabledPresences']
-    print("enabledPresences:", enabledPresences)
 
     async def handleCheck(presence: str, add: bool):
         enabledPresences = app.storage.general['enabledPresences']
@@ -284,10 +290,12 @@ async def home():
 
     def presencesOnSort():
         order = [descendant.text for descendant in defaultPresences.descendants() if isinstance(descendant, ui.item_label)]
-        print(order)
+        logger.info('%s', order)
         app.storage.general['presencePriority'] = order
     
     defaultPresences.make_sortable(on_end = presencesOnSort)
+
+    logger.info('enabledPresences: %s', enabledPresences)
 
 @app.on_startup
 async def onStartup():
@@ -349,10 +357,10 @@ async def onStartup():
         background_tasks.create(startWebsocket())
         background_tasks.create(createIcon())
     elif kr.get_password('LivePresence', 'clientID') is None:
-        print('Not starting Websocket, clientID not found.')
+        logger.warning('Not starting websocket, clientID not found.')
         await setup()
     else: 
-        print('Not starting Websocket, already active')
+        logger.info('Not starting websocket, already active.')
 
 if __name__ == "__main__":
     clientID = kr.get_password('LivePresence', 'clientID')
