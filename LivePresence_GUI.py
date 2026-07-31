@@ -102,6 +102,9 @@ async def hello(websocket):
                     await websocket.send(response)
                 case 'enabledPresences':
                     await sendEnabledPresences()
+                    
+                    response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
+                    await websocket.send(response)
                 case 'clear':
                     try:
                         RPC.clear()
