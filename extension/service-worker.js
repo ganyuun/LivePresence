@@ -66,6 +66,8 @@ function addListeners(websocket) {
         }
 
         if (msg.type === "enabledPresences") {
+            console.log('Received enabledPresences from Python script:', msg.message);
+
             const response = msg.message
             const hostNames = response.map( (dict) => dict.hostName );
 
@@ -163,10 +165,7 @@ const getTabInfo = (tabId, infoType) => {
                         chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
                     }
 
-                    video.onseeked = (event) => {
-                        chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime});
-                    }
-                    
+                    video.onseeked = (event) => { chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime}); }
                 }
             }
 
@@ -174,25 +173,22 @@ const getTabInfo = (tabId, infoType) => {
 
             return new Promise((resolve) => {
                 const check = async () => {
-                    let result1 = await chrome.scripting.executeScript({
+                    let currentTime = await chrome.scripting.executeScript({
                         target: { tabId: tabId, allFrames: true },
                         func: () => document.querySelector('video')?.currentTime
                     });
                     
-                    let result2 = await chrome.scripting.executeScript({
+                    let duration = await chrome.scripting.executeScript({
                         target: { tabId: tabId, allFrames: true },
                         func: () => document.querySelector('video')?.duration
                     });
                     
-                    // result1 is a list of dictionaries, but only the result key is needed
-                    result1 = result1.map(currentTime => currentTime.result)
-                    result2 = result2.map(duration => duration.result)
-
-                    let vidCurrentTime = result1.find((time) => time != null);
-                    let vidDuration = result2.find((duration) => duration != null);
+                    // currentTime is a list of dictionaries, but only the result key is needed
+                    currentTime = currentTime.map(time => time.result).find(time => time != null);
+                    duration = duration.map(dur => dur.result).find(dur => dur != null);
 
                     // if the duration and time has been found, send it back to activityFormatting(), otherwise start again
-                    if (vidDuration != undefined && vidCurrentTime != undefined) { resolve([vidCurrentTime, vidDuration]); }
+                    if (currentTime && duration) { resolve([currentTime, duration]); }
                     else { setTimeout(check, interval); }
                 };
                 check();
@@ -200,12 +196,10 @@ const getTabInfo = (tabId, infoType) => {
         case 'youtube':
             return new Promise((resolve) => {
                 const check = async () => {
-                    const [{result}] = await chrome.scripting.executeScript({
+                    const [{result: author}] = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
-                        func: () => document.querySelector('a.yt-simple-endpoint.style-scope.yt-formatted-string')?.src
+                        func: () => document.querySelector('a.yt-simple-endpoint.style-scope.yt-formatted-string')?.textContent
                     });
-
-                    let author = result;
 
                     if (author) { resolve(author); }
                     else { setTimeout(check, interval); }
@@ -215,14 +209,12 @@ const getTabInfo = (tabId, infoType) => {
         case 'miruro':
             return new Promise((resolve) => {
                 const check = async () => {
-                    let result = await chrome.scripting.executeScript({
+                    let thumbnail = await chrome.scripting.executeScript({
                         target: { tabId: tabId, allFrames: true },
                         func: () => document.querySelector('._coverImg_2wrhc_89')?.src
                     });
 
-                    result = result.map(thumbnail => thumbnail.result)
-
-                    let thumbnail = result.find((thumbnail) => thumbnail != null);
+                    thumbnail = thumbnail.map(thumbnail => thumbnail.result).find(thumbnail => thumbnail != null);
 
                     if (thumbnail) { resolve(thumbnail); }
                     else { setTimeout(check, interval); }
@@ -231,58 +223,58 @@ const getTabInfo = (tabId, infoType) => {
             });
         case 'soundcloud':
             function soundcloudListener() {
-                    const progressBar = document.querySelector('.playbackTimeline__progressWrapper')
+                const progressBar = document.querySelector('.playbackTimeline__progressWrapper')
 
-                    if (progressBar) {
-                        progressBar.onclick = (event) => {
-                            let songCurrentTime = document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
-                            songCurrentTime = songCurrentTime.split(':').map(Number);
-                            songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
+                if (progressBar) {
+                    progressBar.onclick = (event) => {
+                        let songCurrentTime = document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
+                        songCurrentTime = songCurrentTime.split(':').map(Number);
+                        songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
 
-                            chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: songCurrentTime})
-                        }
+                        chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: songCurrentTime})
                     }
                 }
+            }
 
             chrome.scripting.executeScript({ target: {tabId: tabId}, func: soundcloudListener });
 
             return new Promise((resolve) => {
                 const check = async () => {
-                    const [{result: result1}] = await chrome.scripting.executeScript({
+                    let [{result: songCurrentTime}] = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
                         func: () => document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
                     });
                     
-                    const [{result: result2}] = await chrome.scripting.executeScript({
+                    let [{result: songDuration}] = await chrome.scripting.executeScript({
                                 target: { tabId: tabId },
                                 func: () => document.querySelector('div.playbackTimeline__duration span[aria-hidden="true"]')?.textContent
                             });
 
-                    const [{result: result3}] = await chrome.scripting.executeScript({
+                    let [{result: thumbnail}] = await chrome.scripting.executeScript({
                                 target: { tabId: tabId },
                                 func: () => document.querySelector('a.playbackSoundBadge__avatar div.image__lightOutline span')?.style.backgroundImage
                             });
-                    const [{result: result4}] = await chrome.scripting.executeScript({
+                    
+                    let [{result: url}] = await chrome.scripting.executeScript({
                                 target: { tabId: tabId },
                                 func: () => document.querySelector('a.playbackSoundBadge__avatar')?.href
                             });
                     
-                    const [{result: result5}] = await chrome.scripting.executeScript({
+                    const [{result: author}] = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
                         func: () => document.querySelector('a.playbackSoundBadge__lightLink')?.textContent
                     });
 
                     try {
-                        let songCurrentTime = result1.split(':').map(Number);
-                        let songDuration = result2.split(':').map(Number);
-                        let thumbnail = result3.split('"')[1];
-                        let url = result4.replace(RegExp("(\\?).*", "g"), "");
-                        let author = result5
+                        songCurrentTime = songCurrentTime.split(':').map(Number);
+                        songDuration = songDuration.split(':').map(Number);
+                        thumbnail = thumbnail.split('"')[1];
+                        url = url.replace(RegExp("(\\?).*", "g"), "");
 
                         songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
                         songDuration = (songDuration[0] * 60) + songDuration[1];
 
-                        if (songCurrentTime && songDuration && thumbnail && url) { resolve([songCurrentTime, songDuration, thumbnail, url, author]); }
+                        if (songCurrentTime && songDuration && thumbnail && url && author) { resolve([songCurrentTime, songDuration, thumbnail, url, author]); }
                         else { setTimeout(check, interval); }
                     } catch (error) {
                         if (!error instanceof TypeError) { console.log('Error in getting SoundCloud information.') }
@@ -301,7 +293,7 @@ async function activityFormatting(tab, duplicateStatus) {
     if ( presences.videoType.includes(tabName) && tab.audible ) {
         activityType = 'WATCHING';
 
-        const [vidCurrentTime, vidDuration] = await getTabInfo(tab.id, 'video');
+        const [currentTime, duration] = await getTabInfo(tab.id, 'video');
 
         if ( tab.url.includes("youtube.com/watch") ) {
             const author = await getTabInfo(tab.id, 'youtube');
@@ -314,8 +306,8 @@ async function activityFormatting(tab, duplicateStatus) {
                 'url': (tab.url).replace(RegExp("&.*", "g"), ""), 
                 'activityType': activityType, 
                 'thumbnail': `https://img.youtube.com/vi/${(tab.url).replace(RegExp(".*(\\?v=)|(&).*", "g"), "")}/hqdefault.jpg`,
-                'currentTime': vidCurrentTime, 
-                'duration': vidDuration,
+                'currentTime': currentTime, 
+                'duration': duration,
                 'timeSent': Date.now(),
                 'duplicates': duplicateStatus
             };

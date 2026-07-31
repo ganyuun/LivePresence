@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     level = logging.INFO,
-    format = '[%(asctime)s] %(levelname)s: %(message)s',
+    format = '\n[%(asctime)s] %(levelname)s: %(message)s',
     datefmt = '%I:%M:%S %p'
 )
 
@@ -141,12 +141,15 @@ async def hello(websocket):
                     await websocket.send(response)
                 case 'seeked':
                     if newActivity is not None:
-                        newActivity.currentTime = msgMessage
-                        newActivity.setPresence(RPC)
+                        if msgMessage is not None:
+                            newActivity.currentTime = msgMessage
+                            newActivity.setPresence(RPC)
 
-                        if timePollingTask is not None and newActivity.type in {'WATCHING', 'LISTENING'}: 
-                            timePollingTask.cancel()
-                            timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
+                            if timePollingTask is not None and newActivity.type in {'WATCHING', 'LISTENING'}: 
+                                timePollingTask.cancel()
+                                timePollingTask = asyncio.create_task( newActivity.checkTime(websocket) )
+                        else:
+                            logger.warning('Received None in seeked message from extension. currentTime not updated.')
                     else:
                         response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
                         await websocket.send(response)
