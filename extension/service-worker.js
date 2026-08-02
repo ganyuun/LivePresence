@@ -324,8 +324,8 @@ async function activityFormatting(tab, duplicateStatus) {
                 'url': tab.url,
                 'activityType': activityType, 
                 'thumbnail': thumbnail,
-                'currentTime': vidCurrentTime, 
-                'duration': vidDuration, 
+                'currentTime': currentTime, 
+                'duration': duration, 
                 'timeSent': Date.now(),
                 'duplicates': duplicateStatus 
             };

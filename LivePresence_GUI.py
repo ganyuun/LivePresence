@@ -6,6 +6,7 @@ from PIL import Image
 RPC = None
 icon = None # for system tray icon
 rpcActive = False # default value, updated on startup
+server = None
 serverStarted = False
 connectedClients = set()
 
@@ -67,13 +68,12 @@ async def sendEnabledPresences():
     logger.info('Sent enabled presences! %s', response)
 
 async def startWebsocket():
+    global server
     global serverStarted
-    serverStarted = True
 
-    async with websockets.serve(hello, 'localhost', 8765) as server:
-        await server.serve_forever()
-    
-    logger.info('Websocket started!')
+    serverStarted = True
+    server = await websockets.serve(hello, 'localhost', 8765, start_serving = False)
+    await server.serve_forever()
 
 async def hello(websocket):
     global RPC
@@ -164,6 +164,7 @@ async def hello(websocket):
                     await websocket.send(response)
                     logger.info('Received: %s', msgDict)
     except websockets.exceptions.ConnectionClosedOK: pass
+    # except websockets.exceptions.ConnectionClosedError: logging.warning({'Connection closed improperly.'})
     finally: connectedClients.remove(websocket)
 
 def createActivity(tabs):
@@ -358,7 +359,7 @@ async def onStartup():
             'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},
             'Twitch': {'name': 'Twitch', 'hostName': 'twitch.tv', 'type': 'stream'}
         }
-    
+
     if serverStarted is False and kr.get_password('LivePresence', 'clientID') is not None:
         background_tasks.create(startWebsocket())
         background_tasks.create(createIcon())
@@ -367,6 +368,10 @@ async def onStartup():
         await setup()
     else: 
         logger.info('Not starting websocket, already active.')
+
+@app.on_shutdown
+async def onShutdown():
+    server.close(close_connections = False)
 
 if __name__ == "__main__":
     clientID = kr.get_password('LivePresence', 'clientID')
