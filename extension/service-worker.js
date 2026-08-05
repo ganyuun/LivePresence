@@ -75,6 +75,7 @@ function addListeners(websocket) {
                 musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
                 streamType: response.map( dict => {if (dict.type === 'stream') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
                 playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'}} ),
+                
                 videoURLs: response.map( (dict) => {if (dict.type === 'video') { return dict.hostName } else { return 'N/A' }} ),
                 musicURLs: response.map( (dict) => {if (dict.type === 'music') { return dict.hostName } else { return 'N/A' }} ),
                 streamURLs: response.map( (dict) => {if (dict.type === 'stream') { return dict.hostName } else { return 'N/A' }} ),
@@ -83,7 +84,7 @@ function addListeners(websocket) {
 
             presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" );
             presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
-            presences.streamType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
+            presences.streamType = (presences.streamType).filter( presenceName => presenceName !== "N/A" );
             presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" );
 
             presences.videoURLs = (presences.videoURLs).filter( presenceUrl => presenceUrl !== "N/A" );
@@ -225,7 +226,7 @@ const getTabInfo = (tabId, infoType) => {
 
                     const [{result: author}] = await chrome.scripting.executeScript({
                         target: { tabId: tabId },
-                        func: () => document.querySelector('yt-formatted-string.ytmusic-player-bar > a.yt-simple-endpoint.style-scope.yt-formatted-string')?.textContent
+                        func: () => document.querySelector('yt-formatted-string.byline.ytmusic-player-bar').getAttribute('title').split(' • ')[0].replace(' &', ',')
                     });
 
                     let [{result: thumbnail}] = await chrome.scripting.executeScript({
