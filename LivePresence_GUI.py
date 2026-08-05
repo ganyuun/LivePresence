@@ -136,8 +136,11 @@ async def hello(websocket):
                                 match newActivity.name:
                                     case None: pass
                                     case _:
+                                        if timePollingTask is not None:
+                                            timePollingTask.cancel()
+                                        
                                         newActivity.name = None
-                                        RPC.clear()                    
+                                        RPC.clear()
                 case 'checkRPC':
                     logger.info('CheckRPC message received.')
                     response = json.dumps({'type': 'tabs', 'message': 'send updated tabs'})
@@ -310,10 +313,10 @@ async def onStartup():
 
     # presencePriority needs to be updated whenever new supported sites are added
     if app.storage.general.get('presencePriority') is None: 
-        app.storage.general['presencePriority'] = ['YouTube', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch']
+        app.storage.general['presencePriority'] = ['YouTube', 'YouTube Music', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch']
     else:
         prioritySet = set(app.storage.general['presencePriority'])
-        infoSet = set(app.storage.general['presenceInfo'].keys())
+        infoSet = {'YouTube', 'YouTube Music', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch'}
 
         if prioritySet != infoSet: app.storage.general['presencePriority'].extend( infoSet - prioritySet )
 
@@ -345,15 +348,17 @@ async def onStartup():
     if presenceInfo is None:
         app.storage.general['presenceInfo'] = {
             'YouTube': {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'},
+            'YouTube Music': {'name': 'YouTube Music', 'hostName': 'music.youtube.com', 'type': 'music'},
             'SoundCloud': {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
             'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'},
             'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},
             'Twitch': {'name': 'Twitch', 'hostName': 'twitch.tv', 'type': 'stream'}
         }
     else:
-        if set(presenceInfo.keys()) != {'YouTube', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch'}:
+        if set(presenceInfo.keys()) != {'YouTube', 'YouTube Music', 'SoundCloud', 'Miruro', 'LoL Esports', 'Twitch'}:
             app.storage.general['presenceInfo'] = {
             'YouTube': {'name': 'YouTube', 'hostName': 'youtube.com', 'type': 'video'},
+            'YouTube Music': {'name': 'YouTube Music', 'hostName': 'music.youtube.com', 'type': 'music'},
             'SoundCloud': {'name': 'SoundCloud', 'hostName': 'soundcloud.com', 'type': 'music'},
             'Miruro': {'name': 'Miruro', 'hostName': 'miruro.tv', 'type': 'video'},
             'LoL Esports': {'name': 'LoL Esports', 'hostName': 'lolesports.com', 'type': 'stream'},

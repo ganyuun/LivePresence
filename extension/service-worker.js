@@ -66,8 +66,6 @@ function addListeners(websocket) {
         }
 
         if (msg.type === "enabledPresences") {
-            console.log('Received enabledPresences from Python script:', msg.message);
-
             const response = msg.message
             const hostNames = response.map( (dict) => dict.hostName );
 
@@ -76,13 +74,24 @@ function addListeners(websocket) {
                 videoType: response.map( dict => {if (dict.type === 'video') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
                 musicType: response.map( dict => {if (dict.type === 'music') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
                 streamType: response.map( dict => {if (dict.type === 'stream') { return dict.name.toLowerCase() } else { return 'N/A' }} ),
-                playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'} } )
+                playingType: response.map( dict => {if (dict.type === 'playing') { return dict.name.toLowerCase() } else {return 'N/A'}} ),
+                videoURLs: response.map( (dict) => {if (dict.type === 'video') { return dict.hostName } else { return 'N/A' }} ),
+                musicURLs: response.map( (dict) => {if (dict.type === 'music') { return dict.hostName } else { return 'N/A' }} ),
+                streamURLs: response.map( (dict) => {if (dict.type === 'stream') { return dict.hostName } else { return 'N/A' }} ),
+                playingURLs: response.map( (dict) => {if (dict.type === 'playing') { return dict.hostName } else { return 'N/A' }} )
             };
 
             presences.videoType = (presences.videoType).filter( presenceName => presenceName !== "N/A" );
             presences.musicType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
             presences.streamType = (presences.musicType).filter( presenceName => presenceName !== "N/A" );
             presences.playingType = (presences.playingType).filter( presenceName => presenceName !== "N/A" );
+
+            presences.videoURLs = (presences.videoURLs).filter( presenceUrl => presenceUrl !== "N/A" );
+            presences.musicURLs = (presences.musicURLs).filter( presenceUrl => presenceUrl !== "N/A" );
+            presences.streamURLs = (presences.streamURLs).filter( presenceUrl => presenceUrl !== "N/A" );
+            presences.playingURLs = (presences.playingURLs).filter( presenceUrl => presenceUrl !== "N/A" );
+
+            console.log('Received enabledPresences from Python script:', presences);
         }
 
         if (msg.type === 'tabs') {
@@ -205,7 +214,32 @@ const getTabInfo = (tabId, infoType) => {
                     else { setTimeout(check, interval); }
                 };
                 check();
-            });  
+            });
+        case 'youtubeMusic':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    const [{result: title}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('yt-formatted-string.title.style-scope.ytmusic-player-bar')?.textContent
+                    });
+
+                    const [{result: author}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('yt-formatted-string.ytmusic-player-bar > a.yt-simple-endpoint.style-scope.yt-formatted-string')?.textContent
+                    });
+
+                    let [{result: thumbnail}] = await chrome.scripting.executeScript({
+                        target: { tabId: tabId },
+                        func: () => document.querySelector('img.style-scope.ytmusic-player-bar')?.src
+                    });
+
+                    thumbnail = thumbnail.replace( RegExp('\\?sqp.*', 'g'), '' );
+
+                    if (title && author) { resolve([title, author, thumbnail]); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
         case 'miruro':
             return new Promise((resolve) => {
                 const check = async () => {
@@ -286,11 +320,12 @@ const getTabInfo = (tabId, infoType) => {
 }
 
 async function activityFormatting(tab, duplicateStatus) {
-    let tabName = tab.url.replace( RegExp("^(https://)|(www.)|(.com).*|(.tv).*", "g") , "");
+    let tabName = tab.url.replace( RegExp("^(https://)|(www.)|(.com).*|(.tv).*", "g") , "" );
+    let hostName = tab.url.replace( RegExp("^(https://)|(www.)|(/.*)", "g") , "" );
     let activityType;
 
     // tab.audible condition excludes video tabs that are paused, same effect as tab.active but not as strict
-    if ( presences.videoType.includes(tabName) && tab.audible ) {
+    if ( (presences.videoType.includes(tabName) || presences.videoURLs.includes(hostName)) && tab.audible ) {
         activityType = 'WATCHING';
 
         const [currentTime, duration] = await getTabInfo(tab.id, 'video');
@@ -332,7 +367,7 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
-    else if ( presences.musicType.includes(tabName) && tab.audible ) {
+    else if ( (presences.musicType.includes(tabName) || presences.musicURLs.includes(hostName)) && tab.audible ) {
         activityType = 'LISTENING';
         let details;
 
@@ -357,10 +392,28 @@ async function activityFormatting(tab, duplicateStatus) {
                 'duplicates': duplicateStatus
             };
         }
+        else if ( tab.url.includes('music.youtube.com') && tab.audible ) {
+            const [currentTime, duration] = await getTabInfo(tab.id, 'video');
+            const [title, author, thumbnail] = await getTabInfo(tab.id, 'youtubeMusic');
+
+            return {
+                'tabId': tab.id,
+                'name': 'YouTube Music',
+                'details': title,
+                'state': author,
+                'url': undefined,
+                'activityType': activityType,
+                'thumbnail': thumbnail,
+                'currentTime': currentTime,
+                'duration': duration,
+                'timeSent': Date.now(),
+                'duplicates': duplicateStatus
+            };
+        }
         else { return undefined; }
     }
     // else if ( presences.streamType.includes(tabName) && tab.audible ) {} (will implement this later)
-    else if ( presences.playingType.includes(tabName) ) {
+    else if ( presences.playingType.includes(tabName) || presences.playingURLs.includes(hostName) ) {
         activityType = 'PLAYING';
 
         return {
