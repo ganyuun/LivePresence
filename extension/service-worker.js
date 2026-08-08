@@ -1,3 +1,4 @@
+let websocket;
 let presences = [];
 let tabList = [];
 let lastMessage = [];
@@ -8,7 +9,7 @@ connectWebSocket("ws://localhost:8765/");
 
 async function connectWebSocket(url, reconnecting = false) {
     return new Promise((resolve, reject) => {
-        let websocket = new WebSocket(url);
+        websocket = new WebSocket(url);
 
         websocket.onopen = () => {
             console.log('Websocket connected successfully!');
@@ -100,7 +101,7 @@ function addListeners(websocket) {
             if ( !msg.message.includes('silent') ) { console.log("Received hello:", msg); }
         }
 
-        if (msg.type === "enabledPresences") {
+        else if (msg.type === "enabledPresences") {
             const response = msg.message
             const hostNames = response.map( (dict) => dict.hostName );
 
@@ -130,7 +131,7 @@ function addListeners(websocket) {
             console.log('Received enabledPresences from Python script:', presences);
         }
 
-        if (msg.type === 'tabs') {
+        else if (msg.type === 'tabs') {
             clearTimeout(debounceTimer);
 
             debounceTimer = setTimeout(async () => { 
@@ -140,7 +141,7 @@ function addListeners(websocket) {
             }, 1000);
         }
 
-        if (msg.type === 'exit') {
+        else if (msg.type === 'exit') {
             console.log('System tray icon exiting.')
             wsSendMessage(websocket, 'exit', exit);
         }
@@ -148,32 +149,39 @@ function addListeners(websocket) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    switch (msg.request) {
-        case 'ping':
-            try {
+    if (msg.request === 'ping') {
+        try {
                 wsSendMessage(websocket, 'hello', 'from extension popup');
                 sendResponse({recipient: "popup.js", request: "pong"});
             } catch (error) {
                 console.error("Unable to send message:", error)
             }
-        case 'clear':
-            try {
-                wsSendMessage(websocket, 'clear', 'clear');
-                console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
-            }
-            catch (error) { console.error("Unable to send message:", error) }
-        case 'checkRPC':
-            try {
-                wsSendMessage(websocket, 'checkRPC');
-                console.log("Sent message to Python script to check RPC:", {type: "checkRPC", message: ""})
-            }
-            catch (error) { console.error("Unable to send message:", error) }
-        case 'seeked':
-            try {
+    }
+
+    else if (msg.request === 'clear') {
+        try {
+            wsSendMessage(websocket, 'clear', 'clear');
+            console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
+        }
+        catch (error) { console.error("Unable to send message:", error) }
+    }  
+
+    else if (msg.request === 'checkRPC') {
+        try {
+            wsSendMessage(websocket, 'checkRPC');
+            console.log("Sent message to Python script to check RPC:", {type: "checkRPC", message: ""})
+        }
+        catch (error) { console.error("Unable to send message:", error) }
+    }
+    
+    else if (msg.request === 'seeked') {
+        try {
+            if (msg.details) {
                 wsSendMessage(websocket, 'seeked', msg.details);
                 console.log("Sent message to Python script about video seeking:", {type: "seeked", message: msg.details})
             }
-            catch (error) { console.error("Unable to send message:", error) }
+        }
+        catch (error) { console.error("Unable to send message:", error) }
     }
 });
 
