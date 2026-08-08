@@ -167,7 +167,10 @@ async def hello(websocket):
                     await websocket.send(response)
                     logger.info('Received: %s', msgDict)
     except websockets.exceptions.ConnectionClosedOK: pass
-    # except websockets.exceptions.ConnectionClosedError: logging.warning({'Connection closed improperly.'})
+    except websockets.exceptions.ConnectionClosedError: 
+        logging.warning({'Connection closed improperly.'})
+        if icon is not None: icon.stop()
+        app.shutdown()
     finally: connectedClients.remove(websocket)
 
 def createActivity(tabs):

@@ -1,32 +1,65 @@
-let websocket = new WebSocket("ws://localhost:8765/");
 let presences = [];
 let tabList = [];
 let lastMessage = [];
 let debounceTimer;
+let keepAliveId;
 
-connectWebSocket(websocket);
+connectWebSocket("ws://localhost:8765/");
 
-function connectWebSocket(websocket) {
+async function connectWebSocket(url, reconnecting = false) {
     return new Promise((resolve, reject) => {
+        let websocket = new WebSocket(url);
+
         websocket.onopen = () => {
-            resolve("Connected to WebSocket successfully!");
+            console.log('Websocket connected successfully!');
+
             addListeners(websocket);
 
-            websocket.send(JSON.stringify({type: "hello", message: "ping"}));
-            websocket.send(JSON.stringify({type: "enabledPresences"}));
+            wsSendMessage(websocket, 'hello', 'ping');
+            wsSendMessage(websocket, 'enabledPresences');
 
-            const keepAliveId = setInterval( () => { 
-                if (websocket.readyState === WebSocket.OPEN) {
-                    websocket.send(JSON.stringify({type: "hello", message: "keep alive"})); 
+            function keepAlive() { wsSendMessage(websocket, 'hello', 'keep alive'); }
+            
+            keepAliveId = setInterval(keepAlive, 20000);
+            
+            resolve();
+        }
+
+        websocket.onclose = (event) => {
+            if (event.wasClean) { console.log('Websocket has closed.'); }
+            else {
+                if (reconnecting === false) {
+                    console.warn('Websocket connection failed. Attempting reconnection in 30s...');
+                    wsConnectionClosed();
                 }
-            }, 20000 );
-        };
 
-        websocket.onerror = (error) => {
-            console.error("WebSocket connection error:", error);
-            reject(error);
-        };
+                reject('Unclean Websocket closure.');
+            }
+        }
     });
+}
+
+function wsConnectionClosed(startImmediately = false) {
+    async function attemptReconnect() {
+        try {
+            await connectWebSocket("ws://localhost:8765/", true)
+            clearInterval(reconnectIntervalID);
+        } catch (error) { console.warn('Websocket connection failed. Attempting reconnection in 30s...'); }
+    }
+
+    if (startImmediately === true) {
+        console.warn('Websocket is closed. Attempting to reconnect...');
+        attemptReconnect();
+    }
+    const reconnectIntervalID = setInterval(attemptReconnect, 30000);
+}
+
+function wsSendMessage(websocket, type, message = '') {
+    if (websocket.readyState === WebSocket.OPEN) { websocket.send(JSON.stringify({type: type, message: message})); } 
+    else if (websocket.readyState === WebSocket.CLOSING || websocket.readyState === WebSocket.CLOSED) {
+        if (keepAliveId) { clearInterval(keepAliveId); }
+        wsConnectionClosed(true);
+    }
 }
 
 function addListeners(websocket) {
@@ -36,13 +69,15 @@ function addListeners(websocket) {
             const tabs = await getTabs();
             if (tabs !== 'duplicate') {
                 console.log("Tabs sent (duplicates = false):", tabs);
-                websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
+                wsSendMessage(websocket, 'tabs', tabs);
             }
         }, 1000);
     });
 
     chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-        if (removeInfo.isWindowClosing === true) { websocket.send( JSON.stringify( {type: "tabs", message: []} )); }
+        if (removeInfo.isWindowClosing === true) {
+            wsSendMessage(websocket, 'tabs', []);
+        }
         else {
             if (tabList.length > 0) {
                 const filterIndex = tabList.findIndex(tab => tabId === tab.tabId);
@@ -50,7 +85,7 @@ function addListeners(websocket) {
                 if (filterIndex !== -1) {
                     tabList.splice(filterIndex, 1);
                     console.log("Updated tabList:", tabList);
-                    websocket.send( JSON.stringify( {type: "tabs", message: tabList} ));
+                    wsSendMessage(websocket, 'tabs', tabList);
                 }
                 else { console.log("tabList unchanged."); }
             }
@@ -101,13 +136,13 @@ function addListeners(websocket) {
             debounceTimer = setTimeout(async () => { 
                 const tabs = await getTabs(true);
                 console.log("Tabs sent (duplicates = true):", tabs);
-                websocket.send( JSON.stringify( {type: "tabs", message: tabs} ));
+                wsSendMessage(websocket, 'tabs', tabs);
             }, 1000);
         }
 
         if (msg.type === 'exit') {
             console.log('System tray icon exiting.')
-            websocket.send( JSON.stringify({type: "exit", message: "exit"}) )
+            wsSendMessage(websocket, 'exit', exit);
         }
     });
 }
@@ -116,26 +151,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.request) {
         case 'ping':
             try {
-                websocket.send(JSON.stringify({type: "hello", message: "from extension popup"}));
+                wsSendMessage(websocket, 'hello', 'from extension popup');
                 sendResponse({recipient: "popup.js", request: "pong"});
             } catch (error) {
                 console.error("Unable to send message:", error)
             }
         case 'clear':
             try {
-                websocket.send( JSON.stringify({type: "clear", message: "clear"}) );
+                wsSendMessage(websocket, 'clear', 'clear');
                 console.log("Sent message to Python script to clear status:", {type: "clear", message: "clear"})
             }
             catch (error) { console.error("Unable to send message:", error) }
         case 'checkRPC':
             try {
-                websocket.send( JSON.stringify({type: "checkRPC", message: ""}) );
+                wsSendMessage(websocket, 'checkRPC');
                 console.log("Sent message to Python script to check RPC:", {type: "checkRPC", message: ""})
             }
             catch (error) { console.error("Unable to send message:", error) }
         case 'seeked':
             try {
-                websocket.send( JSON.stringify({type: "seeked", message: msg.details}) );
+                wsSendMessage(websocket, 'seeked', msg.details);
                 console.log("Sent message to Python script about video seeking:", {type: "seeked", message: msg.details})
             }
             catch (error) { console.error("Unable to send message:", error) }
@@ -175,7 +210,9 @@ const getTabInfo = (tabId, infoType) => {
                         chrome.runtime.sendMessage({recipient: "service-worker", request: "clear"});
                     }
 
-                    video.onseeked = (event) => { chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime}); }
+                    video.onseeked = (event) => { 
+                        if (video.currentTime) { chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: video.currentTime}); }
+                    }
                 }
             }
 
@@ -263,10 +300,14 @@ const getTabInfo = (tabId, infoType) => {
                 if (progressBar) {
                     progressBar.onclick = (event) => {
                         let songCurrentTime = document.querySelector('div.playbackTimeline__timePassed span[aria-hidden="true"]')?.textContent
-                        songCurrentTime = songCurrentTime.split(':').map(Number);
-                        songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
 
-                        chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: songCurrentTime})
+                        if (songCurrentTime) {
+                            songCurrentTime = songCurrentTime.split(':').map(Number);
+                            songCurrentTime = (songCurrentTime[0] * 60) + songCurrentTime[1];
+
+                            chrome.runtime.sendMessage({recipient: "service-worker", request: "seeked", details: songCurrentTime})
+                        }
+                        
                     }
                 }
             }

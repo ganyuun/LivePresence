@@ -10,3 +10,4 @@ wheels/
 .venv
 
 .nicegui/
+builder.ps1
