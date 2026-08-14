@@ -382,8 +382,6 @@ const getTabInfo = (tabId, infoType) => {
                     channel = channel.map(channel => channel.result).find(channel => channel != null);
                     streamTitle = streamTitle.map(title => title.result).find(title => title != null);
 
-                    console.log("getTabInfo Twitch:", channel, streamTitle);
-
                     if (channel && streamTitle) { resolve([channel, streamTitle]); }
                     else { setTimeout(check, interval); }
                 };
