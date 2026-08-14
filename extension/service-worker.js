@@ -366,6 +366,29 @@ const getTabInfo = (tabId, infoType) => {
                 };
                 check();
             });
+        case 'twitch':
+            return new Promise((resolve) => {
+                const check = async () => {
+                    let channel = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        func: () => document.querySelector('h1.tw-title')?.textContent
+                    });
+
+                    let streamTitle = await chrome.scripting.executeScript({
+                        target: { tabId: tabId, allFrames: true },
+                        func: () => document.querySelector('p[data-a-target="stream-title"]')?.textContent
+                    });
+
+                    channel = channel.map(channel => channel.result).find(channel => channel != null);
+                    streamTitle = streamTitle.map(title => title.result).find(title => title != null);
+
+                    console.log("getTabInfo Twitch:", channel, streamTitle);
+
+                    if (channel && streamTitle) { resolve([channel, streamTitle]); }
+                    else { setTimeout(check, interval); }
+                };
+                check();
+            });
     }
 }
 
@@ -462,7 +485,25 @@ async function activityFormatting(tab, duplicateStatus) {
         }
         else { return undefined; }
     }
-    // else if ( presences.streamType.includes(tabName) && tab.audible ) {} (will implement this later)
+    else if ( presences.streamType.includes(tabName) && tab.audible ) {
+        activityType = 'STREAMING';
+
+        if ( tab.url.includes('twitch.tv') && tab.url.replace('https://twitch.tv/', '').length > 0 ) {
+            let [channel, streamTitle] = await getTabInfo(tab.id, 'twitch');
+
+            // thumbnail will be replaced with link to Twitch.png on GitHub after initial commit
+            return {
+                'tabId': tab.id, 
+                'name': 'Twitch', 
+                'details': channel, 
+                'state': streamTitle,
+                'activityType': activityType, 
+                'thumbnail': '',
+                'timeSent': Date.now(),
+                'duplicates': duplicateStatus 
+            };
+        }
+    }
     else if ( presences.playingType.includes(tabName) || presences.playingURLs.includes(hostName) ) {
         activityType = 'PLAYING';
 

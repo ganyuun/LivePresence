@@ -9,29 +9,40 @@ from datetime import datetime
 @dataclass
 class Presence:
     name: str # displayed in sidebar
-    type: str # accepts only 'PLAYING', 'WATCHING', or 'LISTENING'
+    type: str # accepts only 'PLAYING', 'STREAMING', 'WATCHING', or 'LISTENING'
     details: str # line 1 of activity
     timeSent: float
     state: str = None # line 2 of activity
+    thumbnail: str = None
 
     activityType: Activity = field(init = False)
 
     def __post_init__(self):
-        if self.type not in {'PLAYING', 'WATCHING', 'LISTENING'}: raise ValueError(f'Invalid activity type: {self.type}')
+        if self.type not in {'PLAYING', 'STREAMING', 'WATCHING', 'LISTENING'}: raise ValueError(f'Invalid activity type: {self.type}')
         
         match self.type:
             case 'PLAYING': self.activityType = Activity.Playing
+            case 'STREAMING': self.activityType = Activity.Watching
             case 'WATCHING': self.activityType = Activity.Watching
             case 'LISTENING': self.activityType = Activity.Listening
     
     def setPresence(self, RPC: discordrpc.RPC):
         try:
-            RPC.set_activity(
-                name = self.name,
-                details = self.details,
-                act_type = self.activityType,
-                state = self.state
-            )
+            if self.thumbnail is None:
+                RPC.set_activity(
+                    name = self.name,
+                    details = self.details,
+                    act_type = self.activityType,
+                    state = self.state
+                )
+            else:
+                RPC.set_activity(
+                    name = self.name,
+                    details = self.details,
+                    act_type = self.activityType,
+                    state = self.state,
+                    thumbnail = self.thumbnail
+                )
         except discordrpc.RPCException as e:
             print(f'Error when trying to set status: {e}')
         except discordrpc.DiscordNotOpened:
@@ -41,7 +52,6 @@ class Presence:
 class VideoPresence(Presence):
     state_url: str
     activityType: Activity = field(init = False)
-    thumbnail: str = None
     currentTime: int
     duration: int
 

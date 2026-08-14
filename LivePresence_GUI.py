@@ -219,6 +219,7 @@ def createActivity(tabs):
                         type = highPriority.get('activityType'),
                         details = highPriority.get('details'), 
                         state = highPriority.get('state'),
+                        thumbnail = highPriority.get('thumbnail'),
                         timeSent = highPriority.get('timeSent')
                     )
         except ValueError:
