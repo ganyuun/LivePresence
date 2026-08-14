@@ -41,7 +41,7 @@ class Presence:
                     details = self.details,
                     act_type = self.activityType,
                     state = self.state,
-                    thumbnail = self.thumbnail
+                    large_image = self.thumbnail
                 )
         except discordrpc.RPCException as e:
             print(f'Error when trying to set status: {e}')

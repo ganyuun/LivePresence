@@ -498,7 +498,7 @@ async function activityFormatting(tab, duplicateStatus) {
                 'details': channel, 
                 'state': streamTitle,
                 'activityType': activityType, 
-                'thumbnail': '',
+                'thumbnail': 'https://raw.githubusercontent.com/ganyuun/LivePresence/refs/heads/master/assets/Twitch.png',
                 'timeSent': Date.now(),
                 'duplicates': duplicateStatus 
             };
